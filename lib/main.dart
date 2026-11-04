@@ -512,20 +512,41 @@ class _TuitionHomeState extends State<TuitionHome> {
 
   Future<void> changeTeacherPhoto() async {
     try {
-      final picked = await FilePicker.platform.pickFiles(type: FileType.image, withData: true);
+      final picked = await FilePicker.platform.pickFiles(
+        type: FileType.image, withData: true, allowMultiple: false,
+      );
       if (picked == null || picked.files.isEmpty) return;
       final bytes = picked.files.single.bytes;
-      if (bytes == null || bytes.isEmpty) { notice('Photo read nahi ho payi.'); return; }
-      if (bytes.length > 480 * 1024) {
-        notice('Cloud sync ke liye 480 KB se chhoti photo select karein.');
+      if (bytes == null || bytes.isEmpty) {
+        notice('Photo file phone se read nahi ho payi. Dusri image select karein.');
+        return;
+      }
+      // Save the selected image locally first. Cloud photo sync is optional
+      // and must not prevent the profile photo from appearing on this device.
+      if (bytes.length > 3 * 1024 * 1024) {
+        notice('Photo 3 MB se chhoti select karein.');
         return;
       }
       final encoded = base64Encode(bytes);
-      await FirebaseService.saveTeacherPhoto(encoded);
       profilePhotoBase64 = encoded;
-      await save();
-      if (mounted) notice('Profile photo device aur cloud dono par save ho gayi.');
-    } catch (_) { notice('Profile photo select nahi ho payi.'); }
+      final p = await SharedPreferences.getInstance();
+      final localSaved = await p.setString('ak_teacher_profile_photo', encoded);
+      if (!localSaved) throw StateError('Phone storage rejected the photo.');
+      if (mounted) setState(() {});
+      if (bytes.length <= 480 * 1024) {
+        try {
+          await FirebaseService.saveTeacherPhoto(encoded)
+              .timeout(const Duration(seconds: 10));
+          if (mounted) notice('Profile photo phone aur cloud dono par save ho gayi.');
+        } catch (e) {
+          if (mounted) notice('Photo phone par save hai; cloud sync nahi hua: $e');
+        }
+      } else {
+        if (mounted) notice('Photo phone par save ho gayi. Cloud sync ke liye 480 KB se chhoti image chahiye.');
+      }
+    } catch (e) {
+      if (mounted) notice('Photo save nahi hui: $e');
+    }
   }
 
   Future<void> editAcademy() async {
