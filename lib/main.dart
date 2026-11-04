@@ -1,4 +1,7 @@
 import 'dart:convert';
+import 'dart:typed_data';
+import 'package:cross_file/cross_file.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -566,7 +569,7 @@ class _TuitionHomeState extends State<TuitionHome> {
       reportLine('Outstanding fees', rupees(due)),
       reportLine('Exam records', marks.length.toString()),
       reportLine('Combined marks percentage', pct.toStringAsFixed(1) + '%'),
-      FilledButton.icon(onPressed: () {
+      OutlinedButton.icon(onPressed: backupData, icon: const Icon(Icons.backup_outlined), label: const Text('Backup data (save/share file)')),\n      const SizedBox(height: 8),\n      OutlinedButton.icon(onPressed: restoreData, icon: const Icon(Icons.restore), label: const Text('Restore from backup file')),\n      const SizedBox(height: 8),\n      FilledButton.icon(onPressed: () {
         final b = StringBuffer(academy + ' report\nDate: ' + today + '\n');
         b.writeln('Students: ' + students.length.toString());
         b.writeln('Present: ' + present.toString() + ' | Absent: ' + absent.toString());
@@ -578,6 +581,55 @@ class _TuitionHomeState extends State<TuitionHome> {
       OutlinedButton.icon(onPressed: clearData, icon: const Icon(Icons.delete_outline), label: const Text('Clear all local data')),
       const Text('Data is saved on this phone only. Cloud sync and secure parent login require backend setup.',
         style: TextStyle(fontSize: 12, color: Colors.black54))]);
+  }
+
+  Future<void> backupData() async {
+    try {
+      final backup = <String, dynamic>{
+        'app': 'AK Edu Point', 'backupVersion': 1,
+        'exportedAt': DateTime.now().toIso8601String(),
+        'academy': academy, 'students': students, 'attendance': attendance,
+        'payments': payments, 'marks': marks,
+      };
+      final bytes = Uint8List.fromList(utf8.encode(jsonEncode(backup)));
+      await Share.shareXFiles(
+        [XFile.fromData(bytes, name: 'ak-edu-point-backup.json', mimeType: 'application/json')],
+        subject: 'AK Edu Point data backup',
+        text: 'Keep this backup file safe. It contains student and tuition records.',
+      );
+    } catch (e) { notice('Backup share nahi ho saka: $e'); }
+  }
+
+  Future<void> restoreData() async {
+    try {
+      final picked = await FilePicker.platform.pickFiles(
+        type: FileType.custom, allowedExtensions: ['json'], withData: true,
+      );
+      if (picked == null || picked.files.isEmpty) return;
+      final bytes = picked.files.single.bytes;
+      if (bytes == null) { notice('Backup file read nahi ho payi.'); return; }
+      final decoded = jsonDecode(utf8.decode(bytes));
+      if (decoded is! Map<String, dynamic> || decoded['app'] != 'AK Edu Point' ||
+          decoded['backupVersion'] != 1 || decoded['students'] is! List ||
+          decoded['attendance'] is! List || decoded['payments'] is! List ||
+          decoded['marks'] is! List) {
+        notice('Ye valid AK Edu Point backup file nahi hai.'); return;
+      }
+      final yes = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+        title: const Text('Restore backup?'),
+        content: const Text('Current app data replace ho jayega. Pehle current data ka backup zaroor bana lein.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Restore')),
+        ],
+      ));
+      if (yes != true) return;
+      academy = decoded['academy']?.toString() ?? 'AK Edu Point';
+      students = mapList(decoded['students']); attendance = mapList(decoded['attendance']);
+      payments = mapList(decoded['payments']); marks = mapList(decoded['marks']);
+      await save();
+      if (mounted) notice('Backup restore ho gaya. Records: ${students.length} students.');
+    } catch (_) { notice('Restore nahi ho saka. Sahi backup JSON file select karein.'); }
   }
 
   Future<void> clearData() async {
