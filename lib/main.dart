@@ -349,8 +349,26 @@ class _TuitionHomeState extends State<TuitionHome> {
     d.month.toString().padLeft(2, '0') + '-' + d.day.toString().padLeft(2, '0');
   int n(dynamic v) => int.tryParse(v?.toString() ?? '') ?? 0;
   String rupees(int v) => '₹' + v.toString();
+
+  // Firestore Timestamp/DateTime values are not JSON encodable by default.
+  // Normalize every nested value before saving local records or exporting data.
+  dynamic jsonSafe(dynamic value) {
+    if (value == null || value is String || value is num || value is bool) return value;
+    if (value is DateTime) return value.toIso8601String();
+    if (value is Map) {
+      return value.map((key, item) => MapEntry(key.toString(), jsonSafe(item)));
+    }
+    if (value is Iterable) return value.map(jsonSafe).toList();
+    try {
+      final dynamic converted = value.toDate();
+      if (converted is DateTime) return converted.toIso8601String();
+    } catch (_) {}
+    return value.toString();
+  }
+
   List<Map<String, dynamic>> mapList(dynamic v) => v is List
-    ? v.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList() : [];
+    ? v.whereType<Map>().map((e) =>
+        Map<String, dynamic>.from(jsonSafe(e) as Map)).toList() : [];
 
   List<Map<String, dynamic>> mergeRecords(
     List<Map<String, dynamic>> local, List<Map<String, dynamic>> cloud) {
@@ -422,10 +440,10 @@ class _TuitionHomeState extends State<TuitionHome> {
         attendance = mergeRecords(attendance, mapList(cloud['attendance']));
         payments = mergeRecords(payments, mapList(cloud['payments']));
         marks = mergeRecords(marks, mapList(cloud['marks']));
-        await p.setString(storeKey, jsonEncode({
+        await p.setString(storeKey, jsonEncode(jsonSafe({
           'academy': academy, 'students': students, 'attendance': attendance,
           'payments': payments, 'marks': marks,
-        }));
+        })));
         if (mounted) setState(() {});
         try {
           await FirebaseService.syncTuitionData(
@@ -451,8 +469,8 @@ class _TuitionHomeState extends State<TuitionHome> {
   }
 
   Future<void> save() async {
-    final encoded = jsonEncode({'academy': academy, 'students': students,
-      'attendance': attendance, 'payments': payments, 'marks': marks});
+    final encoded = jsonEncode(jsonSafe({'academy': academy, 'students': students,
+      'attendance': attendance, 'payments': payments, 'marks': marks}));
     // Commit to device storage first. Cloud failure must never discard a record.
     final p = await SharedPreferences.getInstance()
         .timeout(const Duration(seconds: 8));
