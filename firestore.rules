@@ -19,13 +19,23 @@ service cloud.firestore {
 
     match /users/{uid} {
       allow read: if signedIn() && (request.auth.uid == uid || isTeacher());
-      allow create: if signedIn()
-        && request.auth.uid == uid
-        && request.resource.data.role in ['parent', 'student']
-        && request.resource.data.uid == uid;
-      allow update: if signedIn() && request.auth.uid == uid
-        && request.resource.data.role == resource.data.role
-        && request.resource.data.uid == resource.data.uid;
+      // A teacher's profile document may not exist on first login.
+      // Permit the authenticated teacher to create/update only their own
+      // profile document; teacher privileges still come exclusively from
+      // the trusted Firebase custom claim checked by isTeacher().
+      allow create: if (signedIn()
+          && request.auth.uid == uid
+          && request.resource.data.role in ['parent', 'student']
+          && request.resource.data.uid == uid)
+        || (isTeacher()
+          && request.auth.uid == uid
+          && request.resource.data.uid == uid);
+      allow update: if (signedIn() && request.auth.uid == uid
+          && request.resource.data.role == resource.data.role
+          && request.resource.data.uid == resource.data.uid)
+        || (isTeacher()
+          && request.auth.uid == uid
+          && request.resource.data.uid == resource.data.uid);
       allow delete: if isTeacher();
     }
 
