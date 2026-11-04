@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "378949741453",
+    "project_id": "ak-edu-point",
+    "storage_bucket": "ak-edu-point.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:378949741453:android:23b7e9b58689a0f42aebc4",
+        "android_client_info": {
+          "package_name": "com.aniketbgp75.akedupoint"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDuIVOgnjr0SxOUNLPl8UseN0cyMa-a_Jg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
