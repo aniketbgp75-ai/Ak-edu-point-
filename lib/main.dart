@@ -1,9 +1,15 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:share_plus/share_plus.dart';
 
-void main() { WidgetsFlutterBinding.ensureInitialized(); runApp(const AkEduPointApp()); }
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  runApp(const AkEduPointApp());
+}
 
 class AkEduPointApp extends StatelessWidget {
   const AkEduPointApp({super.key});
