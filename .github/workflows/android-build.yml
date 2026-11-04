@@ -37,8 +37,9 @@ jobs:
               s = s.replace(marker, marker + '\n    id("com.google.gms.google-services") version "4.4.2" apply false', 1)
           settings.write_text(s)
           a = app.read_text()
+          import re
           # Newer file_picker lifecycle dependency requires Android API 36.
-          a = re.sub(r"compileSdk\\s*=\\s*flutter\\.compileSdkVersion", "compileSdk = 36", a, count=1)
+          a = re.sub(r"compileSdk\s*=\s*flutter\.compileSdkVersion", "compileSdk = 36", a, count=1)
           if marker not in a:
               raise SystemExit("Could not find plugin block in app/build.gradle.kts")
           if 'com.google.gms.google-services' not in a:
