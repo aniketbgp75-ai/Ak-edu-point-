@@ -200,5 +200,28 @@ class FirebaseService {
     }
   }
 
+
+  /// Store a compact teacher profile photo in the teacher's own profile doc.
+  /// Keep the encoded image below Firestore's 1 MiB document limit.
+  static Future<void> saveTeacherPhoto(String photoBase64) async {
+    final user = currentUser;
+    if (user == null) throw StateError('Please sign in first.');
+    if (photoBase64.length > 650000) {
+      throw ArgumentError('Photo is too large for secure profile sync.');
+    }
+    await db.collection('users').doc(user.uid).set({
+      'uid': user.uid,
+      'profilePhotoBase64': photoBase64,
+    }, SetOptions(merge: true));
+  }
+
+  static Future<String?> getTeacherPhoto() async {
+    final user = currentUser;
+    if (user == null) return null;
+    final doc = await db.collection('users').doc(user.uid).get();
+    final value = doc.data()?['profilePhotoBase64']?.toString();
+    return value == null || value.isEmpty ? null : value;
+  }
+
   static Future<void> signOut() => auth.signOut();
 }
