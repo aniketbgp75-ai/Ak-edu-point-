@@ -263,6 +263,8 @@ class _TuitionHomeState extends State<TuitionHome> {
   static const storeKey = 'ak_edu_point_v1';
   final GlobalKey<ScaffoldState> scaffoldKey = GlobalKey<ScaffoldState>();
   int tab = 0;
+  String studentSearch = '';
+  String batchFilter = 'All';
   String get teacherName {
     final user = FirebaseAuth.instance.currentUser;
     final name = user?.displayName?.trim() ?? '';
@@ -345,24 +347,25 @@ class _TuitionHomeState extends State<TuitionHome> {
     final phone = TextEditingController(text: old?['phone']?.toString() ?? '');
     final guardian = TextEditingController(text: old?['guardian']?.toString() ?? '');
     final fee = TextEditingController(text: old?['fee']?.toString() ?? '');
+    final batch = TextEditingController(text: old?['batch']?.toString() ?? 'General');
     final key = GlobalKey<FormState>();
     final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
       title: Text(old == null ? 'Add student' : 'Edit student'),
       content: Form(key: key, child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
         input(name, 'Student name', required: true), input(cls, 'Class', required: true),
         input(phone, 'Mobile number', type: TextInputType.phone), input(guardian, 'Parent / guardian'),
-        input(fee, 'Monthly fee ₹', type: TextInputType.number)]))),
+        input(batch, 'Batch / Program'), input(fee, 'Monthly fee ₹', type: TextInputType.number)]))),
       actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
         FilledButton(onPressed: () { if (key.currentState!.validate()) Navigator.pop(ctx, true); }, child: const Text('Save'))]));
     if (ok == true) {
       final id = old?['id']?.toString() ?? DateTime.now().microsecondsSinceEpoch.toString();
       final row = <String, dynamic>{'id': id, 'name': name.text.trim(), 'class': cls.text.trim(),
-        'phone': phone.text.trim(), 'guardian': guardian.text.trim(), 'fee': n(fee.text)};
+        'phone': phone.text.trim(), 'guardian': guardian.text.trim(), 'batch': batch.text.trim().isEmpty ? 'General' : batch.text.trim(), 'fee': n(fee.text)};
       final i = students.indexWhere((s) => s['id'] == id);
       if (i < 0) { students.add(row); } else { students[i] = row; }
       await save();
     }
-    name.dispose(); cls.dispose(); phone.dispose(); guardian.dispose(); fee.dispose();
+    name.dispose(); cls.dispose(); phone.dispose(); guardian.dispose(); fee.dispose(); batch.dispose();
   }
 
   Future<void> deleteStudent(Map<String, dynamic> s) async {
@@ -640,15 +643,36 @@ class _TuitionHomeState extends State<TuitionHome> {
     if (students.isEmpty) empty('No students yet', 'Add your first student to begin.')
       else ...students.take(4).map(studentTile)]);
 
-  Widget studentPage() => ListView(padding: const EdgeInsets.fromLTRB(16, 16, 16, 90), children: [
-    Text('Students • ' + students.length.toString(), style: const TextStyle(fontSize: 21, fontWeight: FontWeight.bold)),
-    const SizedBox(height: 10), if (students.isEmpty) empty('No students', 'Tap Add student to begin.')
-      else ...students.map(studentTile)]);
+  Widget studentPage() {
+    final batches = <String>{'All', ...students.map((s) => (s['batch'] ?? 'General').toString())}.toList()..sort();
+    final filtered = students.where((s) {
+      final q = studentSearch.toLowerCase();
+      final matches = s['name'].toString().toLowerCase().contains(q) ||
+        s['class'].toString().toLowerCase().contains(q) ||
+        (s['phone'] ?? '').toString().contains(q);
+      return matches && (batchFilter == 'All' || (s['batch'] ?? 'General') == batchFilter);
+    }).toList();
+    return ListView(padding: const EdgeInsets.fromLTRB(16, 16, 16, 90), children: [
+      Text('Students • ${students.length}', style: const TextStyle(fontSize: 21, fontWeight: FontWeight.bold)),
+      const SizedBox(height: 10),
+      TextField(decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'Search name, class or mobile', border: OutlineInputBorder()),
+        onChanged: (v) => setState(() => studentSearch = v)),
+      const SizedBox(height: 8),
+      DropdownButtonFormField<String>(value: batches.contains(batchFilter) ? batchFilter : 'All',
+        decoration: const InputDecoration(labelText: 'Filter by batch'),
+        items: batches.map((b) => DropdownMenuItem(value: b, child: Text(b))).toList(),
+        onChanged: (v) => setState(() => batchFilter = v ?? 'All')),
+      const SizedBox(height: 10),
+      if (filtered.isEmpty) empty('No students found', 'Add a student or change your search/filter.')
+      else ...filtered.map(studentTile),
+    ]);
+  }
 
   Widget studentTile(Map<String, dynamic> s) => Card(margin: const EdgeInsets.only(bottom: 8), child: ListTile(
+    onTap: () => openStudentDetails(s),
     leading: CircleAvatar(child: Text(s['name'].toString().isEmpty ? '?' : s['name'].toString()[0].toUpperCase())),
     title: Text(s['name'].toString(), style: const TextStyle(fontWeight: FontWeight.w600)),
-    subtitle: Text('Class ' + s['class'].toString() + ' • Fee ' + rupees(n(s['fee']))),
+    subtitle: Text('Class ${s['class']} • ${s['batch'] ?? 'General'} • Fee ${rupees(n(s['fee']))}'),
     trailing: PopupMenuButton<String>(onSelected: (v) {
       if (v == 'edit') studentForm(old: s);
       if (v == 'delete') deleteStudent(s);
@@ -657,6 +681,39 @@ class _TuitionHomeState extends State<TuitionHome> {
       PopupMenuItem(value: 'edit', child: Text('Edit')),
       PopupMenuItem(value: 'remind', child: Text('Share fee reminder')),
       PopupMenuItem(value: 'delete', child: Text('Delete'))])));
+
+  Future<void> openStudentDetails(Map<String, dynamic> s) async {
+    final sid = s['id'];
+    final paid = payments.where((p) => p['studentId'] == sid).fold(0, (v, p) => v + n(p['amount']));
+    final history = attendance.where((a) => a['studentId'] == sid).toList()..sort((a,b) => b['date'].toString().compareTo(a['date'].toString()));
+    final examRows = marks.where((m) => m['studentId'] == sid).toList();
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => Scaffold(
+      appBar: AppBar(title: const Text('Student Details'), actions: [
+        IconButton(onPressed: () { Navigator.pop(context); studentForm(old: s); }, icon: const Icon(Icons.edit_outlined)),
+      ]),
+      body: ListView(padding: const EdgeInsets.all(16), children: [
+        Card(child: Padding(padding: const EdgeInsets.all(18), child: Column(children: [
+          CircleAvatar(radius: 34, child: Text(s['name'].toString().isEmpty ? '?' : s['name'].toString()[0].toUpperCase(), style: const TextStyle(fontSize: 26))),
+          const SizedBox(height: 10), Text(s['name'].toString(), style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+          Text('Class ${s['class']} • ${s['batch'] ?? 'General'}'),
+          Text('Parent: ${s['guardian'] ?? '—'} • Mobile: ${s['phone'] ?? '—'}'),
+        ]))),
+        Row(children: [
+          Expanded(child: stat('Monthly fee', rupees(n(s['fee'])), Icons.currency_rupee, Colors.blue)),
+          Expanded(child: stat('Paid total', rupees(paid), Icons.payments, Colors.green)),
+        ]),
+        const Text('Attendance history', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        if (history.isEmpty) empty('No attendance records', 'Attendance will appear here.')
+          else ...history.take(20).map((a) => ListTile(leading: Icon(a['status'] == 'Present' ? Icons.check_circle : Icons.cancel,
+            color: a['status'] == 'Present' ? Colors.green : Colors.red), title: Text(a['date'].toString()), trailing: Text(a['status'].toString()))),
+        const SizedBox(height: 12),
+        const Text('Exam results', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        if (examRows.isEmpty) empty('No exam marks', 'Exam marks will appear here.')
+          else ...examRows.map((m) => ListTile(title: Text('${m['exam']} • ${m['subject']}'), trailing: Text('${m['obtained']}/${m['total']}'))),
+        OutlinedButton.icon(onPressed: () => feeReminder(s), icon: const Icon(Icons.share), label: const Text('Share fee reminder')),
+      ]),
+    )));
+  }
 
   Widget attendancePage() => ListView(padding: const EdgeInsets.all(16), children: [
     const Text('Daily attendance', style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold)),
