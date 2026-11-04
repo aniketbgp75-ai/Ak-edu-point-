@@ -261,7 +261,14 @@ class TuitionHome extends StatefulWidget {
 
 class _TuitionHomeState extends State<TuitionHome> {
   static const storeKey = 'ak_edu_point_v1';
+  final GlobalKey<ScaffoldState> scaffoldKey = GlobalKey<ScaffoldState>();
   int tab = 0;
+  String get teacherName {
+    final user = FirebaseAuth.instance.currentUser;
+    final name = user?.displayName?.trim() ?? '';
+    if (name.isNotEmpty) return name;
+    return user?.email?.split('@').first ?? 'Teacher';
+  }
   bool loading = true;
   String academy = 'AK Edu Point';
   List<Map<String, dynamic>> students = [], attendance = [], payments = [], marks = [];
@@ -443,8 +450,22 @@ class _TuitionHomeState extends State<TuitionHome> {
   Widget build(BuildContext context) {
     final pages = [dashboard(), studentPage(), attendancePage(), feePage(), marksPage(), reportPage()];
     return Scaffold(
-      appBar: AppBar(title: Text(academy, style: const TextStyle(fontWeight: FontWeight.bold)),
-        actions: [IconButton(onPressed: editAcademy, icon: const Icon(Icons.settings_outlined))]),
+      key: scaffoldKey,
+      drawer: buildAppDrawer(),
+      appBar: AppBar(
+        leading: IconButton(onPressed: () => scaffoldKey.currentState?.openDrawer(),
+          icon: const Icon(Icons.menu_rounded, color: Color(0xFF123B70))),
+        title: Column(mainAxisSize: MainAxisSize.min, children: [
+          Text(['Dashboard', 'Students', 'Attendance', 'Fees', 'Marks', 'Reports'][tab],
+            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 18)),
+          const Text('AK Edu Point', style: TextStyle(fontSize: 11, color: Colors.black54)),
+        ]),
+        centerTitle: true,
+        actions: [Padding(padding: const EdgeInsets.only(right: 10), child: IconButton(
+          tooltip: 'My profile', onPressed: openProfile,
+          icon: const CircleAvatar(radius: 18, backgroundColor: Color(0xFF2580E8),
+            child: Icon(Icons.person, color: Colors.white, size: 23))))],
+      ),
       body: loading ? const Center(child: CircularProgressIndicator()) : IndexedStack(index: tab, children: pages),
       floatingActionButton: tab == 1 ? FloatingActionButton.extended(onPressed: () => studentForm(), icon: const Icon(Icons.person_add), label: const Text('Add student'))
         : tab == 3 ? FloatingActionButton.extended(onPressed: addPayment, icon: const Icon(Icons.add), label: const Text('Add fee'))
@@ -458,6 +479,130 @@ class _TuitionHomeState extends State<TuitionHome> {
           NavigationDestination(icon: Icon(Icons.assignment_outlined), label: 'Marks'),
           NavigationDestination(icon: Icon(Icons.bar_chart_outlined), label: 'Reports')]),
     );
+  }
+
+
+  Widget buildAppDrawer() => Drawer(child: SafeArea(child: ListView(padding: EdgeInsets.zero, children: [
+    Container(padding: const EdgeInsets.all(20), color: const Color(0xFFE8EEF9),
+      child: Row(children: [
+        const CircleAvatar(radius: 30, backgroundColor: Color(0xFF2580E8),
+          child: Icon(Icons.person, color: Colors.white, size: 34)),
+        const SizedBox(width: 14),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(teacherName, maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+          Text(academy, maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Colors.black54)),
+          const SizedBox(height: 5),
+          const Chip(label: Text('Teacher', style: TextStyle(color: Colors.white, fontSize: 12)),
+            backgroundColor: Color(0xFF123B70), visualDensity: VisualDensity.compact),
+        ])),
+      ])),
+    ListTile(leading: const Icon(Icons.person_outline), title: const Text('Profile'),
+      trailing: const Icon(Icons.chevron_right), onTap: () { Navigator.pop(context); openProfile(); }),
+    ListTile(leading: const Icon(Icons.storage_outlined), title: const Text('Data & Storage'),
+      trailing: const Icon(Icons.chevron_right), onTap: () { Navigator.pop(context); openDataStorage(); }),
+    ListTile(leading: const Icon(Icons.currency_rupee), title: const Text('Currency'),
+      trailing: const Icon(Icons.chevron_right), onTap: () { Navigator.pop(context); notice('Currency: Indian Rupee (₹)'); }),
+    ListTile(leading: const Icon(Icons.settings_outlined), title: const Text('Settings'),
+      trailing: const Icon(Icons.chevron_right), onTap: () { Navigator.pop(context); editAcademy(); }),
+    ListTile(leading: const Icon(Icons.feedback_outlined), title: const Text('Feedback'),
+      trailing: const Icon(Icons.chevron_right), onTap: () { Navigator.pop(context); shareText('AK Edu Point feedback'); }),
+    ListTile(leading: const Icon(Icons.info_outline), title: const Text('App Details'),
+      trailing: const Icon(Icons.chevron_right), onTap: () { Navigator.pop(context); showAboutDialog(context: context, applicationName: 'AK Edu Point', applicationVersion: '1.0.0'); }),
+    const Divider(indent: 18, endIndent: 18),
+    ListTile(leading: const Icon(Icons.apps), title: const Text('App Features'),
+      trailing: const Icon(Icons.chevron_right), onTap: () { Navigator.pop(context); showDialog<void>(context: context,
+        builder: (ctx) => AlertDialog(title: const Text('App Features'),
+          content: const Text('Student records\\nAttendance tracking\\nFee management\\nExam marks\\nReports\\nBackup and restore'),
+          actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close'))])); }),
+    ListTile(leading: const Icon(Icons.logout, color: Colors.red), title: const Text('Sign out'),
+      onTap: () async { Navigator.pop(context); await FirebaseService.signOut(); }),
+  ])));
+
+  Future<void> openProfile() async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => Scaffold(
+      appBar: AppBar(title: const Text('My Profile'), centerTitle: true),
+      body: ListView(padding: const EdgeInsets.all(20), children: [
+        Card(child: Padding(padding: const EdgeInsets.all(22), child: Column(children: [
+          const CircleAvatar(radius: 52, backgroundColor: Color(0xFF2580E8),
+            child: Icon(Icons.person, color: Colors.white, size: 58)),
+          const SizedBox(height: 18),
+          Text(teacherName, style: const TextStyle(fontSize: 23, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          Chip(label: Text(academy), avatar: const Icon(Icons.apartment, size: 18)),
+          const Chip(label: Text('Teacher'), backgroundColor: Color(0xFFDCE8FA)),
+          const Divider(height: 28),
+          ListTile(leading: const Icon(Icons.email_outlined), title: const Text('Email address'),
+            subtitle: Text(FirebaseAuth.instance.currentUser?.email ?? 'Not available')),
+          ListTile(leading: const Icon(Icons.school_outlined), title: const Text('Tuition / Academy'), subtitle: Text(academy)),
+        ]))),
+        const SizedBox(height: 18),
+        const Text('ACCOUNT & SETTINGS', style: TextStyle(color: Color(0xFF123B70), fontWeight: FontWeight.w600)),
+        Card(child: Column(children: [
+          ListTile(leading: const Icon(Icons.person_outline), title: const Text('Edit Profile'),
+            subtitle: const Text('Update your name'), trailing: const Icon(Icons.chevron_right), onTap: editTeacherName),
+          const Divider(height: 1),
+          ListTile(leading: const Icon(Icons.settings_outlined), title: const Text('Preferences & Settings'),
+            subtitle: const Text('Manage tuition name'), trailing: const Icon(Icons.chevron_right), onTap: editAcademy),
+        ])),
+        const SizedBox(height: 18),
+        Card(child: ListTile(leading: const Icon(Icons.lock_reset), title: const Text('Change password'),
+          subtitle: const Text('Send password reset link to your email'),
+          trailing: const Icon(Icons.chevron_right), onTap: sendPasswordReset)),
+        const SizedBox(height: 18),
+        OutlinedButton.icon(onPressed: () async { await FirebaseService.signOut(); if (context.mounted) Navigator.pop(context); },
+          icon: const Icon(Icons.logout), label: const Text('Sign out')),
+      ]),
+    )));
+  }
+
+  Future<void> editTeacherName() async {
+    final user = FirebaseAuth.instance.currentUser;
+    final controller = TextEditingController(text: teacherName);
+    final value = await showDialog<String>(context: context, builder: (ctx) => AlertDialog(
+      title: const Text('Edit profile name'),
+      content: TextField(controller: controller, autofocus: true, decoration: const InputDecoration(labelText: 'Your name')),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+        FilledButton(onPressed: () => Navigator.pop(ctx, controller.text.trim()), child: const Text('Save')),
+      ],
+    ));
+    if (value != null && value.isNotEmpty && user != null) {
+      await user.updateDisplayName(value);
+      if (mounted) setState(() {});
+    }
+    controller.dispose();
+  }
+
+  Future<void> sendPasswordReset() async {
+    final email = FirebaseAuth.instance.currentUser?.email;
+    if (email == null) { notice('Account email not available.'); return; }
+    try {
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+      if (mounted) notice('Password reset link sent to $email');
+    } on FirebaseAuthException catch (e) {
+      if (mounted) notice(e.message ?? 'Password reset email could not be sent.');
+    }
+  }
+
+  Future<void> openDataStorage() async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => Scaffold(
+      appBar: AppBar(title: const Text('Data & Storage')),
+      body: ListView(padding: const EdgeInsets.all(20), children: [
+        const Text('Backup your tuition records regularly. Backup files are saved/shared as JSON.',
+          style: TextStyle(color: Colors.black54)),
+        const SizedBox(height: 18),
+        Card(child: ListTile(leading: const Icon(Icons.backup_outlined), title: const Text('Create backup'),
+          subtitle: const Text('Save or share students, attendance, fees and marks'),
+          onTap: () { Navigator.pop(context); backupData(); })),
+        Card(child: ListTile(leading: const Icon(Icons.restore), title: const Text('Restore backup'),
+          subtitle: const Text('Restore records from an AK Edu Point JSON backup'),
+          onTap: () { Navigator.pop(context); restoreData(); })),
+        const Card(child: ListTile(leading: Icon(Icons.phone_android), title: Text('Storage location'),
+          subtitle: Text('Records are currently stored on this device only.'))),
+      ]),
+    )));
   }
 
   Widget stat(String title, String value, IconData icon, Color color) => Card(child: Padding(
