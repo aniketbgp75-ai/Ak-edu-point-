@@ -295,6 +295,17 @@ class _TuitionHomeState extends State<TuitionHome> {
         students = mapList(d['students']); attendance = mapList(d['attendance']);
         payments = mapList(d['payments']); marks = mapList(d['marks']);
       } catch (_) {}
+      try { await FirebaseService.syncTuitionData(academy: academy, students: students, attendance: attendance, payments: payments, marks: marks); } catch (_) {}
+    } else {
+      try {
+        final cloud = await FirebaseService.downloadTuitionData();
+        academy = cloud['academy']?.toString() ?? academy;
+        students = mapList(cloud['students']); attendance = mapList(cloud['attendance']);
+        payments = mapList(cloud['payments']); marks = mapList(cloud['marks']);
+        if (students.isNotEmpty || attendance.isNotEmpty || payments.isNotEmpty || marks.isNotEmpty) {
+          await p.setString(storeKey, jsonEncode({'academy': academy, 'students': students, 'attendance': attendance, 'payments': payments, 'marks': marks}));
+        }
+      } catch (_) {}
     }
     if (mounted) setState(() => loading = false);
   }
@@ -303,6 +314,7 @@ class _TuitionHomeState extends State<TuitionHome> {
     final p = await SharedPreferences.getInstance();
     await p.setString(storeKey, jsonEncode({'academy': academy, 'students': students,
       'attendance': attendance, 'payments': payments, 'marks': marks}));
+    try { await FirebaseService.syncTuitionData(academy: academy, students: students, attendance: attendance, payments: payments, marks: marks); } catch (_) { /* Offline mode: keep the local save. */ }
     if (mounted) setState(() {});
   }
 
@@ -636,9 +648,10 @@ class _TuitionHomeState extends State<TuitionHome> {
     await Navigator.push(context, MaterialPageRoute(builder: (_) => Scaffold(
       appBar: AppBar(title: const Text('Data & Storage')),
       body: ListView(padding: const EdgeInsets.all(20), children: [
-        const Text('Backup your tuition records regularly. Backup files are saved/shared as JSON.',
+        const Text('Tuition records are saved on this phone and synced to your teacher account when internet is available. Keep a separate backup too.',
           style: TextStyle(color: Colors.black54)),
         const SizedBox(height: 18),
+        Card(child: ListTile(leading: const Icon(Icons.cloud_sync_outlined), title: const Text('Sync now'), subtitle: const Text('Upload this device data to your teacher account'), onTap: () async { Navigator.pop(context); try { await FirebaseService.syncTuitionData(academy: academy, students: students, attendance: attendance, payments: payments, marks: marks); if (mounted) notice('Cloud sync completed.'); } catch (_) { if (mounted) notice('Sync nahi hua. Internet aur Firebase rules check karein.'); } })),
         Card(child: ListTile(leading: const Icon(Icons.backup_outlined), title: const Text('Create backup'),
           subtitle: const Text('Save or share students, attendance, fees and marks'),
           onTap: () { Navigator.pop(context); backupData(); })),
