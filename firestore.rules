@@ -29,6 +29,14 @@ service cloud.firestore {
       allow delete: if isTeacher();
     }
 
+    match /users/{uid}/backups/{backupId} {
+      allow read, write: if isTeacher() && request.auth.uid == uid;
+    }
+
+    match /users/{uid}/backups/{backupId}/{collection}/{recordId} {
+      allow read, write: if isTeacher() && request.auth.uid == uid;
+    }
+
     match /students/{studentId} {
       allow read: if isTeacher() || (signedIn() && resource.data.parentUid == request.auth.uid);
       allow create, update, delete: if isTeacher();
