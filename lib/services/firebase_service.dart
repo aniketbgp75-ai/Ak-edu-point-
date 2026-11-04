@@ -73,6 +73,7 @@ class FirebaseService {
     final user = currentUser;
     if (user == null) throw StateError('Please sign in first.');
     final batch = db.batch();
+    final parentByStudent = <String, String>{for (final row in students) if (row['parentUid'] != null) row['id'].toString(): row['parentUid'].toString()};
     final collections = <String, List<Map<String, dynamic>>>{
       'students': students,
       'attendance': attendance,
@@ -86,6 +87,8 @@ class FirebaseService {
         final data = Map<String, dynamic>.from(row)
           ..['ownerUid'] = user.uid
           ..['updatedAt'] = FieldValue.serverTimestamp();
+        final linkedParent = parentByStudent[row['studentId']?.toString()];
+        if (linkedParent != null) data['parentUid'] = linkedParent;
         batch.set(db.collection(entry.key).doc(id), data, SetOptions(merge: true));
       }
     }
@@ -133,7 +136,9 @@ class FirebaseService {
   }
 
   static Future<List<Map<String, dynamic>>> getFamilyRecords(String collection, String studentId) async {
-    final snap = await db.collection(collection).where('studentId', isEqualTo: studentId).get();
+    final user = currentUser;
+    if (user == null) throw StateError('Please sign in first.');
+    final snap = await db.collection(collection).where('parentUid', isEqualTo: user.uid).where('studentId', isEqualTo: studentId).get();
     return snap.docs.map((d) => <String, dynamic>{...d.data(), 'id': d.id}).toList();
   }
 
