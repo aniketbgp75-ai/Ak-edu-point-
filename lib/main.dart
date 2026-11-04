@@ -14,7 +14,11 @@ import 'services/notification_service.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  await AppNotifications.initialize();
+  // A notification permission/plugin failure must never stop the tuition app
+  // itself from launching.
+  try {
+    await AppNotifications.initialize().timeout(const Duration(seconds: 8));
+  } catch (_) {}
   runApp(const AkEduPointApp());
 }
 
