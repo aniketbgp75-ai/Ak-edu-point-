@@ -695,19 +695,161 @@ class _TuitionHomeState extends State<TuitionHome> {
   }
 
   Future<void> openBatchManager() async {
-    await Navigator.push(context, MaterialPageRoute(builder: (_) => Scaffold(
-      appBar: AppBar(title: const Text('Batches & Programs')),
-      body: Builder(builder: (ctx) {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) =>
+      StatefulBuilder(builder: (pageContext, refresh) {
         final groups = <String, List<Map<String, dynamic>>>{};
-        for (final s in students) { groups.putIfAbsent((s['batch'] ?? 'General').toString(), () => []).add(s); }
-        if (groups.isEmpty) return const Center(child: Text('Add students and assign a batch to manage programs.'));
-        return ListView(padding: const EdgeInsets.all(16), children: groups.entries.map((e) => Card(child: ExpansionTile(
-          leading: const Icon(Icons.groups_2_outlined), title: Text(e.key), subtitle: Text('${e.value.length} students'),
-          children: e.value.map((s) => ListTile(title: Text(s['name'].toString()), subtitle: Text('Class ${s['class']} • Fee ${rupees(n(s['fee']))}'),
-            trailing: IconButton(icon: const Icon(Icons.edit_outlined), onPressed: () { Navigator.pop(ctx); studentForm(old: s); }))).toList(),
-        ))).toList());
-      }),
-    )));
+        for (final s in students) {
+          final batchName = (s['batch'] ?? 'General').toString().trim();
+          groups.putIfAbsent(batchName.isEmpty ? 'General' : batchName, () => []).add(s);
+        }
+        Future<void> createBatch() async {
+          final controller = TextEditingController();
+          final key = GlobalKey<FormState>();
+          final ok = await showDialog<bool>(context: pageContext, builder: (dialogContext) =>
+            AlertDialog(title: const Text('Create batch'),
+              content: Form(key: key, child: TextFormField(controller: controller,
+                autofocus: true, decoration: const InputDecoration(labelText: 'Batch name'),
+                validator: (v) => v == null || v.trim().isEmpty ? 'Enter batch name' : null)),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')),
+                FilledButton(onPressed: () {
+                  if (key.currentState!.validate()) Navigator.pop(dialogContext, true);
+                }, child: const Text('Create')),
+              ]));
+          if (ok == true) {
+            final name = controller.text.trim();
+            if (groups.keys.any((x) => x.toLowerCase() == name.toLowerCase())) {
+              if (mounted) notice('This batch already exists.');
+            } else {
+              // A batch is represented by the batch field on its students.
+              // Keep an empty batch visible by assigning it to a dedicated
+              // empty-batch registry in the academy settings.
+              final p = await SharedPreferences.getInstance();
+              final saved = (p.getStringList('ak_empty_batches') ?? <String>[]);
+              saved.add(name);
+              await p.setStringList('ak_empty_batches', saved.toSet().toList());
+              if (mounted) notice('Batch created. Add students and select "$name" in Batch / Program.');
+            }
+            refresh(() {});
+          }
+          controller.dispose();
+        }
+        Future<void> renameBatch(String oldName) async {
+          final controller = TextEditingController(text: oldName);
+          final ok = await showDialog<bool>(context: pageContext, builder: (dialogContext) =>
+            AlertDialog(title: const Text('Rename batch'),
+              content: TextField(controller: controller, autofocus: true,
+                decoration: const InputDecoration(labelText: 'New batch name')),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')),
+                FilledButton(onPressed: () => Navigator.pop(dialogContext, controller.text.trim().isNotEmpty), child: const Text('Save')),
+              ]));
+          if (ok == true) {
+            final newName = controller.text.trim();
+            if (groups.keys.any((x) => x.toLowerCase() == newName.toLowerCase() && x != oldName)) {
+              if (mounted) notice('A batch with this name already exists.');
+            } else {
+              for (final s in students) {
+                if ((s['batch'] ?? 'General').toString() == oldName) s['batch'] = newName;
+              }
+              final p = await SharedPreferences.getInstance();
+              final saved = p.getStringList('ak_empty_batches') ?? <String>[];
+              await p.setStringList('ak_empty_batches', saved.map((x) => x == oldName ? newName : x).toSet().toList());
+              await save();
+              if (mounted) notice('Batch renamed.');
+            }
+            refresh(() {});
+          }
+          controller.dispose();
+        }
+        Future<void> deleteBatch(String name) async {
+          final yes = await showDialog<bool>(context: pageContext, builder: (dialogContext) =>
+            AlertDialog(title: const Text('Delete batch?'),
+              content: Text('Students in "$name" will be moved to General. Student records will not be deleted.'),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')),
+                FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Delete batch')),
+              ]));
+          if (yes == true) {
+            for (final s in students) {
+              if ((s['batch'] ?? 'General').toString() == name) s['batch'] = 'General';
+            }
+            final p = await SharedPreferences.getInstance();
+            final saved = p.getStringList('ak_empty_batches') ?? <String>[];
+            await p.setStringList('ak_empty_batches', saved.where((x) => x != name).toList());
+            await save();
+            if (mounted) notice('Batch deleted. Students moved to General.');
+            refresh(() {});
+          }
+        }
+        final emptyBatches = <String>{
+          ...(SharedPreferences.getInstance() == null ? <String>[] : <String>[]),
+        };
+        return Scaffold(
+          appBar: AppBar(title: const Text('Batches & Programs')),
+          floatingActionButton: FloatingActionButton.extended(
+            onPressed: createBatch, icon: const Icon(Icons.add), label: const Text('Create batch')),
+          body: FutureBuilder<List<String>>(
+            future: SharedPreferences.getInstance().then((p) => p.getStringList('ak_empty_batches') ?? <String>[]),
+            builder: (ctx, snapshot) {
+              final names = <String>{...groups.keys, ...(snapshot.data ?? <String>[])}.toList()..sort();
+              if (names.isEmpty) return const Center(child: Text('Create a batch or add students first.'));
+              return ListView(padding: const EdgeInsets.fromLTRB(16, 12, 16, 90), children: [
+                ...names.map((name) {
+                  final members = groups[name] ?? <Map<String, dynamic>>[];
+                  return Card(child: ExpansionTile(
+                    leading: const Icon(Icons.groups_2_outlined),
+                    title: Text(name),
+                    subtitle: Text('${members.length} students'),
+                    trailing: PopupMenuButton<String>(
+                      onSelected: (v) { if (v == 'rename') renameBatch(name); if (v == 'delete') deleteBatch(name); },
+                      itemBuilder: (_) => const [
+                        PopupMenuItem(value: 'rename', child: Text('Rename batch')),
+                        PopupMenuItem(value: 'delete', child: Text('Delete batch')),
+                      ]),
+                    children: [
+                      if (members.isEmpty) const ListTile(title: Text('No students assigned yet')),
+                      ...members.map((s) => ListTile(
+                        title: Text(s['name'].toString()),
+                        subtitle: Text('Class ${s['class']} • Fee ${rupees(n(s['fee']))}'),
+                        trailing: IconButton(icon: const Icon(Icons.edit_outlined),
+                          onPressed: () async { await studentForm(old: s); refresh(() {}); }),
+                      )),
+                      Padding(padding: const EdgeInsets.all(12), child: OutlinedButton.icon(
+                        onPressed: () async {
+                          final available = students.where((s) => (s['batch'] ?? 'General').toString() != name).toList();
+                          if (available.isEmpty) { notice('No unassigned students. Add a student or edit an existing student.'); return; }
+                          String? selectedId = available.first['id'].toString();
+                          final chosen = await showDialog<String>(context: pageContext, builder: (dialogContext) =>
+                            AlertDialog(title: Text('Add student to $name'),
+                              content: DropdownButtonFormField<String>(
+                                value: selectedId, isExpanded: true,
+                                items: available.map((s) => DropdownMenuItem(
+                                  value: s['id'].toString(), child: Text(s['name'].toString()))).toList(),
+                                onChanged: (v) => selectedId = v),
+                              actions: [
+                                TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+                                FilledButton(onPressed: () => Navigator.pop(dialogContext, selectedId), child: const Text('Add')),
+                              ]));
+                          if (chosen != null) {
+                            final index = students.indexWhere((s) => s['id'].toString() == chosen);
+                            if (index >= 0) {
+                              students[index]['batch'] = name;
+                              await save();
+                              if (mounted) notice('Student added to $name.');
+                              refresh(() {});
+                            }
+                          }
+                        },
+                        icon: const Icon(Icons.person_add_alt_1), label: const Text('Add student to batch'))),
+                    ],
+                  ));
+                }),
+              ]);
+            },
+          ),
+        );
+      })));
   }
 
   Future<void> openLogBook() async {
