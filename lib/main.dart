@@ -221,7 +221,7 @@ class _LoginPageState extends State<LoginPage> {
         ],
       )),
     )),
-  );
+  ));
 }
 
 class AccessPendingPage extends StatelessWidget {
