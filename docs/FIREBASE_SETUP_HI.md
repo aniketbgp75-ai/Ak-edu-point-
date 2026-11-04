@@ -6,7 +6,7 @@
 1. https://console.firebase.google.com/ खोलें और अपने Google account से sign in करें।
 2. **Add project** चुनें और नाम `AK Edu Point` रखें।
 3. Project बनने के बाद Android app जोड़ें।
-4. Android package name वही रखें जो Flutter app में final तय होगा। अभी package id generate/finalize नहीं की गई है; इसे बदलने से पहले Android application id तय करना होगा।
+4. Android package name वही रखें जो Flutter app में final तय होगा। Android package name `com.aniketbgp75.akedupoint` final है और Firebase में इसी नाम से register किया गया है। `firebase/google-services.json` को GitHub Actions build के दौरान `android/app/` में copy किया जाता है।
 5. Firebase Authentication → Sign-in method → **Email/Password** enable करें।
 6. Firestore Database → Create database चुनें। शुरुआत में test mode न रखें; नीचे दिए rules deploy करें।
 
@@ -17,7 +17,7 @@ dart pub global activate flutterfire_cli
 firebase login
 flutterfire configure
 ```
-अपने Firebase project और Android/iOS apps चुनें। यह command `lib/firebase_options.dart` बनाएगी। इसे repository में commit करें, लेकिन service-account JSON या private credentials कभी commit न करें।
+अपने Firebase project और Android/iOS apps चुनें। Android Firebase options `lib/firebase_options.dart` में रखे गए हैं। iOS के लिए अलग Firebase app registration और options अभी बाकी हैं। Service-account JSON या private credentials कभी commit न करें।
 
 ## 3. Firestore rules deploy करें
 Firebase CLI से project चुनने के बाद:
