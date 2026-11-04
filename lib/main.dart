@@ -575,13 +575,42 @@ class _TuitionHomeState extends State<TuitionHome> {
     final parentEmail = TextEditingController(text: old?['parentEmail']?.toString() ?? '');
     final fee = TextEditingController(text: old?['fee']?.toString() ?? '');
     final batch = TextEditingController(text: old?['batch']?.toString() ?? 'General');
+    final joiningDate = TextEditingController(
+      text: old?['joiningDate']?.toString() ?? today,
+    );
     final key = GlobalKey<FormState>();
     final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
       title: Text(old == null ? 'Add student' : 'Edit student'),
       content: Form(key: key, child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
         input(name, 'Student name', required: true), input(cls, 'Class', required: true),
         input(phone, 'Mobile number', type: TextInputType.phone), input(guardian, 'Parent / guardian'),
-        input(parentEmail, 'Parent account email (optional)'), input(batch, 'Batch / Program'), input(fee, 'Monthly fee ₹', type: TextInputType.number)]))),
+        input(parentEmail, 'Parent account email (optional)'),
+        input(batch, 'Batch / Program'),
+        TextFormField(
+          controller: joiningDate,
+          readOnly: true,
+          decoration: const InputDecoration(
+            labelText: 'Joining date',
+            prefixIcon: Icon(Icons.calendar_month),
+            hintText: 'YYYY-MM-DD',
+          ),
+          onTap: () async {
+            final parts = joiningDate.text.split('-');
+            final initial = parts.length == 3
+                ? DateTime.tryParse(joiningDate.text) ?? DateTime.now()
+                : DateTime.now();
+            final picked = await showDatePicker(
+              context: ctx,
+              initialDate: initial,
+              firstDate: DateTime(2000),
+              lastDate: DateTime(2100),
+            );
+            if (picked != null) {
+              joiningDate.text = dateKey(picked);
+            }
+          },
+        ),
+        input(fee, 'Monthly fee ₹', type: TextInputType.number)]))),
       actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
         FilledButton(onPressed: () { if (key.currentState!.validate()) Navigator.pop(ctx, true); }, child: const Text('Save'))]));
     if (ok == true) {
@@ -591,7 +620,9 @@ class _TuitionHomeState extends State<TuitionHome> {
       final row = <String, dynamic>{'id': id, 'name': name.text.trim(), 'class': cls.text.trim(),
         'phone': phone.text.trim(), 'guardian': guardian.text.trim(), 'parentEmail': parentEmail.text.trim().toLowerCase(),
         if (parentUid != null) 'parentUid': parentUid,
-        'batch': batch.text.trim().isEmpty ? 'General' : batch.text.trim(), 'fee': n(fee.text)};
+        'batch': batch.text.trim().isEmpty ? 'General' : batch.text.trim(),
+        'joiningDate': joiningDate.text.trim().isEmpty ? today : joiningDate.text.trim(),
+        'fee': n(fee.text)};
       final i = students.indexWhere((s) => s['id'] == id);
       if (i < 0) { students.add(row); } else { students[i] = row; }
       try {
@@ -601,7 +632,7 @@ class _TuitionHomeState extends State<TuitionHome> {
         if (mounted) notice('Student save nahi hua: ${e.toString()}');
       }
     }
-    name.dispose(); cls.dispose(); phone.dispose(); guardian.dispose(); parentEmail.dispose(); fee.dispose(); batch.dispose();
+    name.dispose(); cls.dispose(); phone.dispose(); guardian.dispose(); parentEmail.dispose(); fee.dispose(); batch.dispose(); joiningDate.dispose();
   }
 
   Future<void> deleteStudent(Map<String, dynamic> s) async {
@@ -1173,6 +1204,9 @@ class _TuitionHomeState extends State<TuitionHome> {
           const SizedBox(height: 10), Text(s['name'].toString(), style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
           Text('Class ${s['class']} • ${s['batch'] ?? 'General'}'),
           Text('Parent: ${s['guardian'] ?? '—'} • Mobile: ${s['phone'] ?? '—'}'),
+          const SizedBox(height: 6),
+          Text('Joining date: ${s['joiningDate'] ?? 'Not recorded'}',
+            style: const TextStyle(color: Colors.black54)),
         ]))),
         Row(children: [
           Expanded(child: stat('Monthly fee', rupees(n(s['fee'])), Icons.currency_rupee, Colors.blue)),
