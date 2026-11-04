@@ -367,8 +367,11 @@ class _TuitionHomeState extends State<TuitionHome> {
   void initState() { super.initState(); load(); }
 
   Future<void> load() async {
-    final p = await SharedPreferences.getInstance();
     try {
+      // Bound local storage initialization too; otherwise the first await can
+      // leave the dashboard spinner visible forever if the platform channel fails.
+      final p = await SharedPreferences.getInstance()
+          .timeout(const Duration(seconds: 5));
       // Load local data first so the dashboard never waits for the network.
       final raw = p.getString(storeKey);
       profilePhotoBase64 = p.getString('ak_teacher_profile_photo');
