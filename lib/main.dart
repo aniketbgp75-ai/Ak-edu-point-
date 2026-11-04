@@ -313,6 +313,11 @@ class _TuitionHomeState extends State<TuitionHome> {
     return payments.where((p) => (p['date']?.toString() ?? '').startsWith(month))
       .fold(0, (v, p) => v + n(p['amount']));
   }
+  int get cashCollection => payments.where((p) => (p['date']?.toString() ?? '').startsWith(today.substring(0, 7)) && (p['mode'] ?? 'Cash') == 'Cash').fold(0, (v, p) => v + n(p['amount']));
+  int get onlineCollection => payments.where((p) => (p['date']?.toString() ?? '').startsWith(today.substring(0, 7)) && p['mode'] == 'Online').fold(0, (v, p) => v + n(p['amount']));
+  int get yearlyCollection => payments.where((p) => (p['date']?.toString() ?? '').startsWith(today.substring(0, 4))).fold(0, (v, p) => v + n(p['amount']));
+  int get batchCount => students.map((s) => (s['batch'] ?? 'General').toString()).toSet().length;
+  int get classCount => students.map((s) => (s['class'] ?? '').toString()).toSet().length;
   int get due => students.fold(0, (sum, s) {
     final paid = payments.where((p) => p['studentId'] == s['id'] &&
       (p['date']?.toString() ?? '').startsWith(today.substring(0, 7)))
@@ -404,14 +409,18 @@ class _TuitionHomeState extends State<TuitionHome> {
     if (id == null) return;
     final amount = TextEditingController(), note = TextEditingController(text: 'Monthly fee');
     final key = GlobalKey<FormState>();
-    final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+    String mode = 'Cash';
+    final ok = await showDialog<bool>(context: context, builder: (ctx) => StatefulBuilder(builder: (ctx, refresh) => AlertDialog(
       title: const Text('Record fee'), content: Form(key: key, child: Column(mainAxisSize: MainAxisSize.min, children: [
-        input(amount, 'Amount ₹', required: true, type: TextInputType.number), input(note, 'Note')])),
+        input(amount, 'Amount ₹', required: true, type: TextInputType.number), input(note, 'Note'),
+        const SizedBox(height: 8), DropdownButtonFormField<String>(value: mode, decoration: const InputDecoration(labelText: 'Payment mode'),
+          items: const [DropdownMenuItem(value: 'Cash', child: Text('Cash')), DropdownMenuItem(value: 'Online', child: Text('Online'))],
+          onChanged: (v) { if (v != null) refresh(() => mode = v); })])),
       actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-        FilledButton(onPressed: () { if (key.currentState!.validate() && n(amount.text) > 0) Navigator.pop(ctx, true); }, child: const Text('Save'))]));
+        FilledButton(onPressed: () { if (key.currentState!.validate() && n(amount.text) > 0) Navigator.pop(ctx, true); }, child: const Text('Save'))])));
     if (ok == true) {
       payments.add({'id': DateTime.now().microsecondsSinceEpoch.toString(), 'studentId': id,
-        'amount': n(amount.text), 'note': note.text.trim(), 'date': today});
+        'amount': n(amount.text), 'note': note.text.trim(), 'mode': mode, 'date': today});
       await save(); notice('Payment saved.');
     }
     amount.dispose(); note.dispose();
@@ -437,6 +446,38 @@ class _TuitionHomeState extends State<TuitionHome> {
       await save();
     }
     exam.dispose(); subject.dispose(); got.dispose(); total.dispose();
+  }
+
+  Future<void> openBatchManager() async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => Scaffold(
+      appBar: AppBar(title: const Text('Batches & Programs')),
+      body: Builder(builder: (ctx) {
+        final groups = <String, List<Map<String, dynamic>>>{};
+        for (final s in students) { groups.putIfAbsent((s['batch'] ?? 'General').toString(), () => []).add(s); }
+        if (groups.isEmpty) return const Center(child: Text('Add students and assign a batch to manage programs.'));
+        return ListView(padding: const EdgeInsets.all(16), children: groups.entries.map((e) => Card(child: ExpansionTile(
+          leading: const Icon(Icons.groups_2_outlined), title: Text(e.key), subtitle: Text('${e.value.length} students'),
+          children: e.value.map((s) => ListTile(title: Text(s['name'].toString()), subtitle: Text('Class ${s['class']} • Fee ${rupees(n(s['fee']))}'),
+            trailing: IconButton(icon: const Icon(Icons.edit_outlined), onPressed: () { Navigator.pop(ctx); studentForm(old: s); }))).toList(),
+        ))).toList());
+      }),
+    )));
+  }
+
+  Future<void> openLogBook() async {
+    DateTime selected = DateTime.now();
+    await showDialog<void>(context: context, builder: (ctx) => StatefulBuilder(builder: (ctx, refresh) {
+      final key = dateKey(selected);
+      final rows = attendance.where((a) => a['date'] == key).toList();
+      final p = rows.where((a) => a['status'] == 'Present').length;
+      final a = rows.where((x) => x['status'] == 'Absent').length;
+      return AlertDialog(title: const Text('Attendance LogBook'), content: SizedBox(width: 360, child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        OutlinedButton.icon(onPressed: () async { final d = await showDatePicker(context: ctx, initialDate: selected, firstDate: DateTime(2020), lastDate: DateTime(2035)); if (d != null) refresh(() => selected = d); }, icon: const Icon(Icons.calendar_month), label: Text(key)),
+        Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [Text('Present: $p'), Text('Absent: $a')]),
+        if (rows.isEmpty) const Padding(padding: EdgeInsets.all(16), child: Text('No attendance marked for this date.'))
+        else ...rows.map((r) => ListTile(dense: true, title: Text(studentName(r['studentId'].toString())), trailing: Text(r['status'].toString())))
+      ]))), actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close'))]);
+    }));
   }
 
   Future<void> feeReminder(Map<String, dynamic> s) async {
@@ -503,6 +544,8 @@ class _TuitionHomeState extends State<TuitionHome> {
       ])),
     ListTile(leading: const Icon(Icons.person_outline), title: const Text('Profile'),
       trailing: const Icon(Icons.chevron_right), onTap: () { Navigator.pop(context); openProfile(); }),
+    ListTile(leading: const Icon(Icons.groups_2_outlined), title: const Text('Batches & Programs'), trailing: const Icon(Icons.chevron_right), onTap: () { Navigator.pop(context); openBatchManager(); }),
+    ListTile(leading: const Icon(Icons.calendar_month), title: const Text('LogBook'), trailing: const Icon(Icons.chevron_right), onTap: () { Navigator.pop(context); openLogBook(); }),
     ListTile(leading: const Icon(Icons.storage_outlined), title: const Text('Data & Storage'),
       trailing: const Icon(Icons.chevron_right), onTap: () { Navigator.pop(context); openDataStorage(); }),
     ListTile(leading: const Icon(Icons.currency_rupee), title: const Text('Currency'),
@@ -633,12 +676,14 @@ class _TuitionHomeState extends State<TuitionHome> {
         stat('Present today', present.toString(), Icons.how_to_reg, Colors.green),
         stat('Fee collected', rupees(collection), Icons.payments, Colors.orange),
         stat('Fee due', rupees(due), Icons.pending_actions, Colors.red)]),
+    const SizedBox(height: 10), GridView.count(crossAxisCount: 2, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), mainAxisSpacing: 8, crossAxisSpacing: 8, childAspectRatio: 1.8,
+      children: [stat('Classes', classCount.toString(), Icons.menu_book_outlined, Colors.indigo), stat('Batches', batchCount.toString(), Icons.groups_2_outlined, Colors.teal), stat('Yearly collection', rupees(yearlyCollection), Icons.calendar_month, Colors.green), stat('Cash this month', rupees(cashCollection), Icons.money, Colors.brown), stat('Online this month', rupees(onlineCollection), Icons.phone_android, Colors.blue)]),
     const SizedBox(height: 16), const Text('Quick actions', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
     Wrap(spacing: 6, runSpacing: 6, children: [
       quick('Add student', Icons.person_add, () => studentForm()),
       quick('Attendance', Icons.fact_check, () => setState(() => tab = 2)),
       quick('Collect fee', Icons.currency_rupee, addPayment),
-      quick('Add marks', Icons.assignment, addMarks)]),
+      quick('Add marks', Icons.assignment, addMarks), quick('LogBook', Icons.calendar_month, openLogBook), quick('Batches', Icons.groups_2, openBatchManager)]),
     const SizedBox(height: 16), const Text('Recent students', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
     if (students.isEmpty) empty('No students yet', 'Add your first student to begin.')
       else ...students.take(4).map(studentTile)]);
@@ -740,7 +785,7 @@ class _TuitionHomeState extends State<TuitionHome> {
     else ...payments.reversed.map((p) => Card(child: ListTile(
       leading: const CircleAvatar(child: Icon(Icons.currency_rupee)),
       title: Text(studentName(p['studentId'].toString())),
-      subtitle: Text(p['note'].toString() + ' • ' + p['date'].toString()),
+      subtitle: Text(p['note'].toString() + ' • ' + p['date'].toString() + ' • ' + (p['mode'] ?? 'Cash').toString()),
       trailing: Text(rupees(n(p['amount'])), style: const TextStyle(fontWeight: FontWeight.bold))))),
     OutlinedButton.icon(onPressed: () => shareText(academy + '\nCollected: ' + rupees(collection) + '\nDue: ' + rupees(due)),
       icon: const Icon(Icons.share), label: const Text('Share fee summary'))]);
