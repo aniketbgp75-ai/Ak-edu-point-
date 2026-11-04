@@ -45,8 +45,8 @@ jobs:
           # Match the package registered in Firebase.
           import re
           package_name = "com.aniketbgp75.akedupoint"
-          a, ns_count = re.subn(r'namespace\\s*=\\s*"[^"]+"', f'namespace = "{package_name}"', a, count=1)
-          a, app_count = re.subn(r'applicationId\\s*=\\s*"[^"]+"', f'applicationId = "{package_name}"', a, count=1)
+          a, ns_count = re.subn(r'namespace\s*=\s*"[^"]+"', f'namespace = "{package_name}"', a, count=1)
+          a, app_count = re.subn(r'applicationId\s*=\s*"[^"]+"', f'applicationId = "{package_name}"', a, count=1)
           if ns_count != 1 or app_count != 1:
               raise SystemExit("Could not set Android namespace/applicationId to Firebase package")
           app.write_text(a)
@@ -57,7 +57,7 @@ jobs:
               raise SystemExit("Could not find generated MainActivity")
           activity = candidates[0]
           source = activity.read_text()
-          source = re.sub(r'^package\\s+[^;\\n]+;?\\s*', f'package {package_name}\\n', source, count=1, flags=re.M)
+          source = re.sub(r'^package\s+[^;\n]+;?\s*', f'package {package_name}\n', source, count=1, flags=re.M)
           target = Path("android/app/src/main/kotlin") / Path(*package_name.split(".")) / activity.name
           if activity.suffix == ".java":
               target = Path("android/app/src/main/java") / Path(*package_name.split(".")) / activity.name
