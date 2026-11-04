@@ -39,7 +39,9 @@ jobs:
           a = app.read_text()
           import re
           # Newer file_picker lifecycle dependency requires Android API 36.
-          a = re.sub(r"compileSdk\s*=\s*flutter\.compileSdkVersion", "compileSdk = 36", a, count=1)
+          a, sdk_count = re.subn(r"compileSdk\s*=\s*[^\n]+", "compileSdk = 36", a, count=1)
+          if sdk_count != 1:
+              raise SystemExit("Could not set Android compileSdk to 36")
           if marker not in a:
               raise SystemExit("Could not find plugin block in app/build.gradle.kts")
           if 'com.google.gms.google-services' not in a:
