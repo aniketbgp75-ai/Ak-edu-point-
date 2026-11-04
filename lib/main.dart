@@ -447,18 +447,30 @@ class _TuitionHomeState extends State<TuitionHome> {
   }
 
   Future<void> save() async {
-    final p = await SharedPreferences.getInstance();
-    await p.setString(storeKey, jsonEncode({'academy': academy, 'students': students,
-      'attendance': attendance, 'payments': payments, 'marks': marks}));
-    if (profilePhotoBase64 == null) { await p.remove('ak_teacher_profile_photo'); }
-    else { await p.setString('ak_teacher_profile_photo', profilePhotoBase64!); }
+    final encoded = jsonEncode({'academy': academy, 'students': students,
+      'attendance': attendance, 'payments': payments, 'marks': marks});
+    // Commit to device storage first. Cloud failure must never discard a record.
+    final p = await SharedPreferences.getInstance()
+        .timeout(const Duration(seconds: 8));
+    final stored = await p.setString(storeKey, encoded)
+        .timeout(const Duration(seconds: 8));
+    if (!stored) throw StateError('Phone storage could not save the records.');
+    if (profilePhotoBase64 == null) {
+      await p.remove('ak_teacher_profile_photo');
+    } else {
+      await p.setString('ak_teacher_profile_photo', profilePhotoBase64!);
+    }
+    if (mounted) setState(() {});
     try {
       await FirebaseService.syncTuitionData(academy: academy, students: students,
-        attendance: attendance, payments: payments, marks: marks);
+        attendance: attendance, payments: payments, marks: marks)
+          .timeout(const Duration(seconds: 12));
       await FirebaseService.createAutomaticBackup(academy: academy,
-        students: students, attendance: attendance, payments: payments, marks: marks);
-    } catch (_) { /* Offline mode: keep the local save; retry backup next launch. */ }
-    if (mounted) setState(() {});
+        students: students, attendance: attendance, payments: payments, marks: marks)
+          .timeout(const Duration(seconds: 12));
+    } catch (_) {
+      if (mounted) notice('Phone par save ho gaya. Cloud sync pending hai; internet/Firebase rules check karein.');
+    }
   }
 
   int get present => attendance.where((a) => a['date'] == today && a['status'] == 'Present').length;
@@ -557,7 +569,12 @@ class _TuitionHomeState extends State<TuitionHome> {
         'batch': batch.text.trim().isEmpty ? 'General' : batch.text.trim(), 'fee': n(fee.text)};
       final i = students.indexWhere((s) => s['id'] == id);
       if (i < 0) { students.add(row); } else { students[i] = row; }
-      await save();
+      try {
+        await save();
+        if (mounted) notice(old == null ? 'Student phone par save ho gaya.' : 'Student details update ho gayi.');
+      } catch (e) {
+        if (mounted) notice('Student save nahi hua: ${e.toString()}');
+      }
     }
     name.dispose(); cls.dispose(); phone.dispose(); guardian.dispose(); parentEmail.dispose(); fee.dispose(); batch.dispose();
   }
