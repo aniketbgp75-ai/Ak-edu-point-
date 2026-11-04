@@ -411,6 +411,11 @@ class _TuitionHomeState extends State<TuitionHome> {
         }
       } catch (_) {}
     }
+    try {
+      await FirebaseService.createAutomaticBackup(
+        academy: academy, students: students, attendance: attendance,
+        payments: payments, marks: marks);
+    } catch (_) { /* A failed backup must not block app startup. */ }
     if (mounted) setState(() => loading = false);
   }
 
@@ -420,7 +425,12 @@ class _TuitionHomeState extends State<TuitionHome> {
       'attendance': attendance, 'payments': payments, 'marks': marks}));
     if (profilePhotoBase64 == null) { await p.remove('ak_teacher_profile_photo'); }
     else { await p.setString('ak_teacher_profile_photo', profilePhotoBase64!); }
-    try { await FirebaseService.syncTuitionData(academy: academy, students: students, attendance: attendance, payments: payments, marks: marks); } catch (_) { /* Offline mode: keep the local save. */ }
+    try {
+      await FirebaseService.syncTuitionData(academy: academy, students: students,
+        attendance: attendance, payments: payments, marks: marks);
+      await FirebaseService.createAutomaticBackup(academy: academy,
+        students: students, attendance: attendance, payments: payments, marks: marks);
+    } catch (_) { /* Offline mode: keep the local save; retry backup next launch. */ }
     if (mounted) setState(() {});
   }
 
