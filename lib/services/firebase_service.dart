@@ -72,32 +72,63 @@ class FirebaseService {
   }) async {
     final user = currentUser;
     if (user == null) throw StateError('Please sign in first.');
-    final batch = db.batch();
-    final parentByStudent = <String, String>{for (final row in students) if (row['parentUid'] != null) row['id'].toString(): row['parentUid'].toString()};
+
+    final parentByStudent = <String, String>{
+      for (final row in students)
+        if (row['parentUid'] != null && row['id'] != null)
+          row['id'].toString(): row['parentUid'].toString(),
+    };
+    final writes = <({DocumentReference<Map<String, dynamic>> ref, Map<String, dynamic> data})>[];
     final collections = <String, List<Map<String, dynamic>>>{
       'students': students,
       'attendance': attendance,
       'payments': payments,
       'marks': marks,
     };
+
     for (final entry in collections.entries) {
       for (final row in entry.value) {
-        final id = row['id']?.toString();
+        final studentId = row['studentId']?.toString();
+        // Older attendance entries did not have an id. Give them a stable
+        // document key so they can be synced without creating duplicates.
+        final id = row['id']?.toString() ??
+            (entry.key == 'attendance' && studentId != null && row['date'] != null
+                ? '${studentId}_${row['date']}'
+                : null);
         if (id == null || id.isEmpty) continue;
         final data = Map<String, dynamic>.from(row)
           ..['ownerUid'] = user.uid
           ..['updatedAt'] = FieldValue.serverTimestamp();
-        final linkedParent = parentByStudent[row['studentId']?.toString()];
-        if (linkedParent != null) data['parentUid'] = linkedParent;
-        batch.set(db.collection(entry.key).doc(id), data, SetOptions(merge: true));
+        if (entry.key == 'attendance' && row['id'] == null) data['id'] = id;
+        final linkedParent = entry.key == 'students'
+            ? row['parentUid']?.toString()
+            : parentByStudent[studentId];
+        if (linkedParent != null && linkedParent.isNotEmpty) {
+          data['parentUid'] = linkedParent;
+        }
+        writes.add((
+          ref: db.collection(entry.key).doc(id),
+          data: data,
+        ));
       }
     }
-    batch.set(db.collection('users').doc(user.uid), {
+
+    // Firestore limits a batch to 500 writes. Keep a safety margin and
+    // commit in chunks so larger tuition datasets do not fail as one batch.
+    for (var offset = 0; offset < writes.length; offset += 400) {
+      final batch = db.batch();
+      final end = (offset + 400 < writes.length) ? offset + 400 : writes.length;
+      for (final write in writes.sublist(offset, end)) {
+        batch.set(write.ref, write.data, SetOptions(merge: true));
+      }
+      await batch.commit();
+    }
+
+    await db.collection('users').doc(user.uid).set({
       'uid': user.uid,
       'academy': academy,
       'lastSyncAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
-    await batch.commit();
   }
 
   static Future<Map<String, dynamic>> downloadTuitionData() async {
