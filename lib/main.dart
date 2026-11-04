@@ -368,55 +368,79 @@ class _TuitionHomeState extends State<TuitionHome> {
 
   Future<void> load() async {
     final p = await SharedPreferences.getInstance();
-    final raw = p.getString(storeKey);
-    profilePhotoBase64 = p.getString('ak_teacher_profile_photo');
-    await AppNotifications.setFeeReminder(p.getBool('ak_fee_alerts') ?? true);
-    await AppNotifications.setAttendanceReminder(p.getBool('ak_attendance_alerts') ?? true);
-    await AppNotifications.setWeeklySummary(p.getBool('ak_weekly_summary') ?? false);
-    if (profilePhotoBase64 == null) {
+    try {
+      // Load local data first so the dashboard never waits for the network.
+      final raw = p.getString(storeKey);
+      profilePhotoBase64 = p.getString('ak_teacher_profile_photo');
+      if (raw != null) {
+        try {
+          final d = jsonDecode(raw) as Map<String, dynamic>;
+          academy = d['academy']?.toString() ?? academy;
+          students = mapList(d['students']);
+          attendance = mapList(d['attendance']);
+          payments = mapList(d['payments']);
+          marks = mapList(d['marks']);
+        } catch (_) {}
+      }
+      if (mounted) setState(() => loading = false);
+
+      // Notifications and cloud services are optional; failures/timeouts must
+      // never leave the main dashboard stuck behind its loading spinner.
       try {
-        profilePhotoBase64 = await FirebaseService.getTeacherPhoto();
-        if (profilePhotoBase64 != null) {
-          await p.setString('ak_teacher_profile_photo', profilePhotoBase64!);
-        }
-      } catch (_) { /* Use the local photo when cloud access is unavailable. */ }
-    }
-    if (raw != null) {
-      try {
-        final d = jsonDecode(raw) as Map<String, dynamic>;
-        academy = d['academy']?.toString() ?? academy;
-        students = mapList(d['students']); attendance = mapList(d['attendance']);
-        payments = mapList(d['payments']); marks = mapList(d['marks']);
+        await AppNotifications.setFeeReminder(p.getBool('ak_fee_alerts') ?? true)
+            .timeout(const Duration(seconds: 4));
+        await AppNotifications.setAttendanceReminder(p.getBool('ak_attendance_alerts') ?? true)
+            .timeout(const Duration(seconds: 4));
+        await AppNotifications.setWeeklySummary(p.getBool('ak_weekly_summary') ?? false)
+            .timeout(const Duration(seconds: 4));
       } catch (_) {}
+
+      if (profilePhotoBase64 == null) {
+        try {
+          profilePhotoBase64 = await FirebaseService.getTeacherPhoto()
+              .timeout(const Duration(seconds: 6));
+          if (profilePhotoBase64 != null) {
+            await p.setString('ak_teacher_profile_photo', profilePhotoBase64!);
+          }
+        } catch (_) {}
+      }
+
       try {
-        final cloud = await FirebaseService.downloadTuitionData();
-        academy = academy == 'AK Edu Point' ? (cloud['academy']?.toString() ?? academy) : academy;
+        final cloud = await FirebaseService.downloadTuitionData()
+            .timeout(const Duration(seconds: 8));
+        academy = academy == 'AK Edu Point'
+            ? (cloud['academy']?.toString() ?? academy)
+            : academy;
         students = mergeRecords(students, mapList(cloud['students']));
         attendance = mergeRecords(attendance, mapList(cloud['attendance']));
         payments = mergeRecords(payments, mapList(cloud['payments']));
         marks = mergeRecords(marks, mapList(cloud['marks']));
-        await p.setString(storeKey, jsonEncode({'academy': academy, 'students': students,
-          'attendance': attendance, 'payments': payments, 'marks': marks}));
-        await FirebaseService.syncTuitionData(academy: academy, students: students,
-          attendance: attendance, payments: payments, marks: marks);
-      } catch (_) {}
-    } else {
+        await p.setString(storeKey, jsonEncode({
+          'academy': academy, 'students': students, 'attendance': attendance,
+          'payments': payments, 'marks': marks,
+        }));
+        if (mounted) setState(() {});
+        try {
+          await FirebaseService.syncTuitionData(
+            academy: academy, students: students, attendance: attendance,
+            payments: payments, marks: marks,
+          ).timeout(const Duration(seconds: 8));
+        } catch (_) {}
+      } catch (_) {
+        // Continue in offline mode with locally saved tuition data.
+      }
+
       try {
-        final cloud = await FirebaseService.downloadTuitionData();
-        academy = cloud['academy']?.toString() ?? academy;
-        students = mapList(cloud['students']); attendance = mapList(cloud['attendance']);
-        payments = mapList(cloud['payments']); marks = mapList(cloud['marks']);
-        if (students.isNotEmpty || attendance.isNotEmpty || payments.isNotEmpty || marks.isNotEmpty) {
-          await p.setString(storeKey, jsonEncode({'academy': academy, 'students': students, 'attendance': attendance, 'payments': payments, 'marks': marks}));
-        }
+        await FirebaseService.createAutomaticBackup(
+          academy: academy, students: students, attendance: attendance,
+          payments: payments, marks: marks,
+        ).timeout(const Duration(seconds: 8));
       } catch (_) {}
+    } catch (_) {
+      // Keep the app usable even if local preferences or an optional service fails.
+    } finally {
+      if (mounted && loading) setState(() => loading = false);
     }
-    try {
-      await FirebaseService.createAutomaticBackup(
-        academy: academy, students: students, attendance: attendance,
-        payments: payments, marks: marks);
-    } catch (_) { /* A failed backup must not block app startup. */ }
-    if (mounted) setState(() => loading = false);
   }
 
   Future<void> save() async {
