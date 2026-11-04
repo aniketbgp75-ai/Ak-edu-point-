@@ -477,19 +477,57 @@ class _TuitionHomeState extends State<TuitionHome> {
   }
 
   Future<void> openLogBook() async {
-    DateTime selected = DateTime.now();
-    await showDialog<void>(context: context, builder: (ctx) => StatefulBuilder(builder: (ctx, refresh) {
-      final key = dateKey(selected);
-      final rows = attendance.where((a) => a['date'] == key).toList();
-      final p = rows.where((a) => a['status'] == 'Present').length;
-      final a = rows.where((x) => x['status'] == 'Absent').length;
-      return AlertDialog(title: const Text('Attendance LogBook'), content: SizedBox(width: 360, child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
-        OutlinedButton.icon(onPressed: () async { final d = await showDatePicker(context: ctx, initialDate: selected, firstDate: DateTime(2020), lastDate: DateTime(2035)); if (d != null) refresh(() => selected = d); }, icon: const Icon(Icons.calendar_month), label: Text(key)),
-        Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [Text('Present: $p'), Text('Absent: $a')]),
-        if (rows.isEmpty) const Padding(padding: EdgeInsets.all(16), child: Text('No attendance marked for this date.'))
-        else ...rows.map((r) => ListTile(dense: true, title: Text(studentName(r['studentId'].toString())), trailing: Text(r['status'].toString())))
-      ]))), actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close'))]);
-    }));
+    DateTime month = DateTime(DateTime.now().year, DateTime.now().month);
+    DateTime? selected;
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => StatefulBuilder(builder: (ctx, refresh) {
+      final firstWeekday = DateTime(month.year, month.month, 1).weekday;
+      final days = DateTime(month.year, month.month + 1, 0).day;
+      final selectedKey = selected == null ? null : dateKey(selected!);
+      final selectedRows = selectedKey == null ? <Map<String, dynamic>>[] : attendance.where((a) => a['date'] == selectedKey).toList();
+      int countFor(int day, String status) => attendance.where((a) => a['date'] == dateKey(DateTime(month.year, month.month, day)) && a['status'] == status).length;
+      return Scaffold(appBar: AppBar(title: const Text('Monthly Attendance LogBook')),
+        body: ListView(padding: const EdgeInsets.all(16), children: [
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            IconButton(onPressed: () => refresh(() { month = DateTime(month.year, month.month - 1); selected = null; }), icon: const Icon(Icons.chevron_left)),
+            Text('${month.month.toString().padLeft(2, '0')}/${month.year}', style: const TextStyle(fontSize: 19, fontWeight: FontWeight.bold)),
+            IconButton(onPressed: () => refresh(() { month = DateTime(month.year, month.month + 1); selected = null; }), icon: const Icon(Icons.chevron_right)),
+          ]),
+          const Row(children: [Expanded(child: Center(child: Text('Mon'))), Expanded(child: Center(child: Text('Tue'))), Expanded(child: Center(child: Text('Wed'))), Expanded(child: Center(child: Text('Thu'))), Expanded(child: Center(child: Text('Fri'))), Expanded(child: Center(child: Text('Sat'))), Expanded(child: Center(child: Text('Sun')))]),
+          const SizedBox(height: 8),
+          GridView.builder(shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), itemCount: days + firstWeekday - 1,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 7, mainAxisSpacing: 5, crossAxisSpacing: 5),
+            itemBuilder: (context, index) {
+              final day = index - firstWeekday + 2;
+              if (day < 1 || day > days) return const SizedBox.shrink();
+              final presentCount = countFor(day, 'Present'), absentCount = countFor(day, 'Absent');
+              final active = selected?.day == day && selected?.month == month.month && selected?.year == month.year;
+              return InkWell(onTap: () => refresh(() => selected = DateTime(month.year, month.month, day)),
+                child: Container(decoration: BoxDecoration(color: active ? Theme.of(ctx).colorScheme.primaryContainer : (presentCount + absentCount > 0 ? Colors.green.withValues(alpha: .10) : Colors.transparent), borderRadius: BorderRadius.circular(10), border: Border.all(color: active ? Theme.of(ctx).colorScheme.primary : Colors.black12)),
+                  child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Text('$day', style: const TextStyle(fontWeight: FontWeight.w600)), if (presentCount + absentCount > 0) Text('$presentCount P • $absentCount A', style: const TextStyle(fontSize: 8))])));
+            }),
+          const SizedBox(height: 16),
+          if (selected != null) ...[
+            Text(dateKey(selected!), style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+            if (selectedRows.isEmpty) const Text('No attendance marked for this date.')
+            else ...selectedRows.map((r) => ListTile(dense: true, title: Text(studentName(r['studentId'].toString())), trailing: Text(r['status'].toString(), style: TextStyle(color: r['status'] == 'Present' ? Colors.green : Colors.red)))),
+          ] else const Text('Calendar date select karke attendance details dekhein.'),
+        ]));
+    })));
+  }
+
+  Future<void> openSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    bool feeAlerts = prefs.getBool('ak_fee_alerts') ?? true;
+    bool attendanceAlerts = prefs.getBool('ak_attendance_alerts') ?? true;
+    bool weeklySummary = prefs.getBool('ak_weekly_summary') ?? false;
+    await showDialog<void>(context: context, builder: (ctx) => StatefulBuilder(builder: (ctx, refresh) =>
+      AlertDialog(title: const Text('Settings & Notification Preferences'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Fee reminder preferences'), value: feeAlerts, onChanged: (v) async { refresh(() => feeAlerts = v); await prefs.setBool('ak_fee_alerts', v); }),
+          SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Attendance reminder preferences'), value: attendanceAlerts, onChanged: (v) async { refresh(() => attendanceAlerts = v); await prefs.setBool('ak_attendance_alerts', v); }),
+          SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Weekly summary preference'), value: weeklySummary, onChanged: (v) async { refresh(() => weeklySummary = v); await prefs.setBool('ak_weekly_summary', v); }),
+          const Text('These are saved preferences. Push notifications and scheduled alerts need notification service setup.', style: TextStyle(fontSize: 12, color: Colors.black54)),
+        ]), actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close'))])));
   }
 
   Future<void> feeReminder(Map<String, dynamic> s) async {
@@ -563,7 +601,7 @@ class _TuitionHomeState extends State<TuitionHome> {
     ListTile(leading: const Icon(Icons.currency_rupee), title: const Text('Currency'),
       trailing: const Icon(Icons.chevron_right), onTap: () { Navigator.pop(context); notice('Currency: Indian Rupee (₹)'); }),
     ListTile(leading: const Icon(Icons.settings_outlined), title: const Text('Settings'),
-      trailing: const Icon(Icons.chevron_right), onTap: () { Navigator.pop(context); editAcademy(); }),
+      trailing: const Icon(Icons.chevron_right), onTap: () { Navigator.pop(context); openSettings(); }),
     ListTile(leading: const Icon(Icons.feedback_outlined), title: const Text('Feedback'),
       trailing: const Icon(Icons.chevron_right), onTap: () { Navigator.pop(context); shareText('AK Edu Point feedback'); }),
     ListTile(leading: const Icon(Icons.info_outline), title: const Text('App Details'),
@@ -602,7 +640,8 @@ class _TuitionHomeState extends State<TuitionHome> {
             subtitle: const Text('Update your name'), trailing: const Icon(Icons.chevron_right), onTap: editTeacherName),
           const Divider(height: 1),
           ListTile(leading: const Icon(Icons.settings_outlined), title: const Text('Preferences & Settings'),
-            subtitle: const Text('Manage tuition name'), trailing: const Icon(Icons.chevron_right), onTap: editAcademy),
+            subtitle: const Text('Notifications and app preferences'), trailing: const Icon(Icons.chevron_right), onTap: openSettings),
+          ListTile(leading: const Icon(Icons.edit_outlined), title: const Text('Tuition / Academy Name'), subtitle: Text(academy), onTap: editAcademy),
         ])),
         const SizedBox(height: 18),
         Card(child: ListTile(leading: const Icon(Icons.lock_reset), title: const Text('Change password'),
