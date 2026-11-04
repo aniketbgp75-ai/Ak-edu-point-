@@ -40,7 +40,7 @@ service cloud.firestore {
     }
 
     match /payments/{paymentId} {
-      allow read: if isTeacher() || (signedIn() && isLinkedFamily(resource.data.studentId));
+      allow read: if isTeacher() || (signedIn() && resource.data.parentUid == request.auth.uid);
       allow create, update, delete: if isTeacher();
     }
 
