@@ -17,7 +17,7 @@ class FirebaseService {
     required String password,
   }) {
     return auth.signInWithEmailAndPassword(
-      email: email.trim(),
+      email: email.trim().toLowerCase(),
       password: password,
     );
   }
@@ -42,7 +42,7 @@ class FirebaseService {
     await db.collection('users').doc(user.uid).set({
       'uid': user.uid,
       'name': name.trim(),
-      'email': email.trim(),
+      'email': email.trim().toLowerCase(),
       'role': role,
       'createdAt': FieldValue.serverTimestamp(),
     });
