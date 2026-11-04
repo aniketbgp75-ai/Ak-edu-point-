@@ -346,6 +346,21 @@ class _TuitionHomeState extends State<TuitionHome> {
   List<Map<String, dynamic>> mapList(dynamic v) => v is List
     ? v.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList() : [];
 
+  List<Map<String, dynamic>> mergeRecords(
+    List<Map<String, dynamic>> local, List<Map<String, dynamic>> cloud) {
+    final merged = <String, Map<String, dynamic>>{};
+    for (final row in cloud) {
+      final id = row['id']?.toString();
+      if (id != null && id.isNotEmpty) merged[id] = Map<String, dynamic>.from(row);
+    }
+    // Prefer this device's version for matching IDs, but retain cloud-only rows.
+    for (final row in local) {
+      final id = row['id']?.toString();
+      if (id != null && id.isNotEmpty) merged[id] = Map<String, dynamic>.from(row);
+    }
+    return merged.values.toList();
+  }
+
   @override
   void initState() { super.initState(); load(); }
 
@@ -360,7 +375,18 @@ class _TuitionHomeState extends State<TuitionHome> {
         students = mapList(d['students']); attendance = mapList(d['attendance']);
         payments = mapList(d['payments']); marks = mapList(d['marks']);
       } catch (_) {}
-      try { await FirebaseService.syncTuitionData(academy: academy, students: students, attendance: attendance, payments: payments, marks: marks); } catch (_) {}
+      try {
+        final cloud = await FirebaseService.downloadTuitionData();
+        academy = academy == 'AK Edu Point' ? (cloud['academy']?.toString() ?? academy) : academy;
+        students = mergeRecords(students, mapList(cloud['students']));
+        attendance = mergeRecords(attendance, mapList(cloud['attendance']));
+        payments = mergeRecords(payments, mapList(cloud['payments']));
+        marks = mergeRecords(marks, mapList(cloud['marks']));
+        await p.setString(storeKey, jsonEncode({'academy': academy, 'students': students,
+          'attendance': attendance, 'payments': payments, 'marks': marks}));
+        await FirebaseService.syncTuitionData(academy: academy, students: students,
+          attendance: attendance, payments: payments, marks: marks);
+      } catch (_) {}
     } else {
       try {
         final cloud = await FirebaseService.downloadTuitionData();
@@ -797,7 +823,7 @@ class _TuitionHomeState extends State<TuitionHome> {
           subtitle: const Text('Restore records from an AK Edu Point JSON backup'),
           onTap: () { Navigator.pop(context); restoreData(); })),
         const Card(child: ListTile(leading: Icon(Icons.phone_android), title: Text('Storage location'),
-          subtitle: Text('Records are currently stored on this device only.'))),
+          subtitle: Text('Local device cache plus teacher Firestore cloud copy after a successful sync. Keep a separate JSON backup too.'))),
       ]),
     )));
   }
@@ -981,7 +1007,7 @@ class _TuitionHomeState extends State<TuitionHome> {
       }, icon: const Icon(Icons.share), label: const Text('Share full report')),
       const SizedBox(height: 8),
       OutlinedButton.icon(onPressed: clearData, icon: const Icon(Icons.delete_outline), label: const Text('Clear all local data')),
-      const Text('Data is saved on this phone only. Cloud sync and secure parent login require backend setup.',
+      const Text('Records are cached on this phone and can sync to Firestore. Parent access requires the teacher to link the registered family email to a student.',
         style: TextStyle(fontSize: 12, color: Colors.black54))]);
   }
 
