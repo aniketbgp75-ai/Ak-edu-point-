@@ -512,7 +512,22 @@ class _TuitionHomeState extends State<TuitionHome> {
       title: const Text('Delete student?'), content: Text('Remove ' + s['name'].toString() + '?'),
       actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
         FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete'))]));
-    if (yes == true) { students.removeWhere((x) => x['id'] == s['id']); await save(); }
+    if (yes == true) {
+      final id = s['id'].toString();
+      try {
+        // Remove the cloud copy first so the family dashboard cannot keep
+        // showing a deleted student's private records.
+        await FirebaseService.deleteStudentRecords(id);
+        students.removeWhere((x) => x['id'] == id);
+        attendance.removeWhere((x) => x['studentId'] == id);
+        payments.removeWhere((x) => x['studentId'] == id);
+        marks.removeWhere((x) => x['studentId'] == id);
+        await save();
+        if (mounted) notice('Student aur uske attendance, fees, marks records delete ho gaye.');
+      } catch (_) {
+        if (mounted) notice('Delete nahi hua. Internet/Firebase connection check karke dobara try karein.');
+      }
+    }
   }
 
   String statusOf(Map<String, dynamic> s) {
