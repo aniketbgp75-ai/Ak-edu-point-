@@ -60,6 +60,9 @@ jobs:
               a = a.replace("compileOptions {", "compileOptions {\n        isCoreLibraryDesugaringEnabled = true", 1)
           if "coreLibraryDesugaring(" not in a:
               a = a.replace("dependencies {", "dependencies {\n    coreLibraryDesugaring(\"com.android.tools:desugar_jdk_libs:2.1.4\")", 1)
+          # Verify both Gradle desugaring settings were inserted.
+          if "isCoreLibraryDesugaringEnabled = true" not in a or "coreLibraryDesugaring(\"com.android.tools:desugar_jdk_libs:2.1.4\")" not in a:
+              raise SystemExit("Could not configure core library desugaring")
           app.write_text(a)
 
           # Keep the generated launcher Activity in the same Java/Kotlin package.
