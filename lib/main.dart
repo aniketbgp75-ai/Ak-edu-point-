@@ -336,6 +336,7 @@ class _TuitionHomeState extends State<TuitionHome> {
   }
   bool loading = true;
   String academy = 'AK Edu Point';
+  String? profilePhotoBase64;
   List<Map<String, dynamic>> students = [], attendance = [], payments = [], marks = [];
   String get today => dateKey(DateTime.now());
   String dateKey(DateTime d) => d.year.toString().padLeft(4, '0') + '-' +
@@ -351,6 +352,7 @@ class _TuitionHomeState extends State<TuitionHome> {
   Future<void> load() async {
     final p = await SharedPreferences.getInstance();
     final raw = p.getString(storeKey);
+    profilePhotoBase64 = p.getString('ak_teacher_profile_photo');
     if (raw != null) {
       try {
         final d = jsonDecode(raw) as Map<String, dynamic>;
@@ -377,6 +379,8 @@ class _TuitionHomeState extends State<TuitionHome> {
     final p = await SharedPreferences.getInstance();
     await p.setString(storeKey, jsonEncode({'academy': academy, 'students': students,
       'attendance': attendance, 'payments': payments, 'marks': marks}));
+    if (profilePhotoBase64 == null) { await p.remove('ak_teacher_profile_photo'); }
+    else { await p.setString('ak_teacher_profile_photo', profilePhotoBase64!); }
     try { await FirebaseService.syncTuitionData(academy: academy, students: students, attendance: attendance, payments: payments, marks: marks); } catch (_) { /* Offline mode: keep the local save. */ }
     if (mounted) setState(() {});
   }
@@ -406,6 +410,30 @@ class _TuitionHomeState extends State<TuitionHome> {
   }
   void notice(String text) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   Future<void> shareText(String text) => Share.share(text, subject: academy);
+
+  Widget teacherAvatar(double radius) {
+    final encoded = profilePhotoBase64;
+    if (encoded != null && encoded.isNotEmpty) {
+      try {
+        return CircleAvatar(radius: radius, backgroundImage: MemoryImage(base64Decode(encoded)));
+      } catch (_) {}
+    }
+    return CircleAvatar(radius: radius, backgroundColor: const Color(0xFF2580E8),
+      child: Icon(Icons.person, color: Colors.white, size: radius * 1.1));
+  }
+
+  Future<void> changeTeacherPhoto() async {
+    try {
+      final picked = await FilePicker.platform.pickFiles(type: FileType.image, withData: true);
+      if (picked == null || picked.files.isEmpty) return;
+      final bytes = picked.files.single.bytes;
+      if (bytes == null || bytes.isEmpty) { notice('Photo read nahi ho payi.'); return; }
+      if (bytes.length > 3 * 1024 * 1024) { notice('Photo 3 MB se chhoti select karein.'); return; }
+      profilePhotoBase64 = base64Encode(bytes);
+      await save();
+      if (mounted) notice('Profile photo update ho gayi. Ye photo is device par save hai.');
+    } catch (_) { notice('Profile photo select nahi ho payi.'); }
+  }
 
   Future<void> editAcademy() async {
     final c = TextEditingController(text: academy);
@@ -467,7 +495,7 @@ class _TuitionHomeState extends State<TuitionHome> {
   }
   Future<void> setAttendance(Map<String, dynamic> s, String status) async {
     final i = attendance.indexWhere((a) => a['studentId'] == s['id'] && a['date'] == today);
-    final row = <String, dynamic>{'studentId': s['id'], 'date': today, 'status': status};
+    final row = <String, dynamic>{'id': '${s['id']}_$today', 'studentId': s['id'], 'date': today, 'status': status};
     if (i < 0) { attendance.add(row); } else { attendance[i] = row; }
     await save();
   }
@@ -647,8 +675,7 @@ class _TuitionHomeState extends State<TuitionHome> {
   Widget buildAppDrawer() => Drawer(child: SafeArea(child: ListView(padding: EdgeInsets.zero, children: [
     Container(padding: const EdgeInsets.all(20), color: const Color(0xFFE8EEF9),
       child: Row(children: [
-        const CircleAvatar(radius: 30, backgroundColor: Color(0xFF2580E8),
-          child: Icon(Icons.person, color: Colors.white, size: 34)),
+        teacherAvatar(30),
         const SizedBox(width: 14),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(teacherName, maxLines: 1, overflow: TextOverflow.ellipsis,
@@ -689,8 +716,10 @@ class _TuitionHomeState extends State<TuitionHome> {
       appBar: AppBar(title: const Text('My Profile'), centerTitle: true),
       body: ListView(padding: const EdgeInsets.all(20), children: [
         Card(child: Padding(padding: const EdgeInsets.all(22), child: Column(children: [
-          const CircleAvatar(radius: 52, backgroundColor: Color(0xFF2580E8),
-            child: Icon(Icons.person, color: Colors.white, size: 58)),
+          GestureDetector(onTap: changeTeacherPhoto, child: Stack(alignment: Alignment.bottomRight, children: [
+            teacherAvatar(52), const CircleAvatar(radius: 15, child: Icon(Icons.camera_alt, size: 16)),
+          ])),
+          const SizedBox(height: 6), const Text('Tap photo to change', style: TextStyle(fontSize: 12, color: Colors.black54)),
           const SizedBox(height: 18),
           Text(teacherName, style: const TextStyle(fontSize: 23, fontWeight: FontWeight.w600)),
           const SizedBox(height: 8),
@@ -706,6 +735,8 @@ class _TuitionHomeState extends State<TuitionHome> {
         Card(child: Column(children: [
           ListTile(leading: const Icon(Icons.person_outline), title: const Text('Edit Profile'),
             subtitle: const Text('Update your name'), trailing: const Icon(Icons.chevron_right), onTap: editTeacherName),
+          ListTile(leading: const Icon(Icons.photo_camera_outlined), title: const Text('Change profile photo'),
+            subtitle: const Text('Choose an image up to 3 MB'), trailing: const Icon(Icons.chevron_right), onTap: changeTeacherPhoto),
           const Divider(height: 1),
           ListTile(leading: const Icon(Icons.settings_outlined), title: const Text('Preferences & Settings'),
             subtitle: const Text('Notifications and app preferences'), trailing: const Icon(Icons.chevron_right), onTap: openSettings),
@@ -996,6 +1027,7 @@ class _TuitionHomeState extends State<TuitionHome> {
       ));
       if (yes != true) return;
       academy = decoded['academy']?.toString() ?? 'AK Edu Point';
+      profilePhotoBase64 = decoded['profilePhotoBase64']?.toString();
       students = mapList(decoded['students']); attendance = mapList(decoded['attendance']);
       payments = mapList(decoded['payments']); marks = mapList(decoded['marks']);
       await save();
