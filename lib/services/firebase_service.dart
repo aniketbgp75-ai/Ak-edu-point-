@@ -114,5 +114,28 @@ class FirebaseService {
     };
   }
 
+
+  static Future<String?> findFamilyUidByEmail(String email) async {
+    final value = email.trim().toLowerCase();
+    if (value.isEmpty) return null;
+    final snap = await db.collection('users').where('email', isEqualTo: value).limit(1).get();
+    if (snap.docs.isEmpty) return null;
+    final data = snap.docs.first.data();
+    if (data['role'] != 'parent' && data['role'] != 'student') return null;
+    return snap.docs.first.id;
+  }
+
+  static Future<List<Map<String, dynamic>>> getFamilyStudents() async {
+    final user = currentUser;
+    if (user == null) throw StateError('Please sign in first.');
+    final snap = await db.collection('students').where('parentUid', isEqualTo: user.uid).get();
+    return snap.docs.map((d) => <String, dynamic>{...d.data(), 'id': d.id}).toList();
+  }
+
+  static Future<List<Map<String, dynamic>>> getFamilyRecords(String collection, String studentId) async {
+    final snap = await db.collection(collection).where('studentId', isEqualTo: studentId).get();
+    return snap.docs.map((d) => <String, dynamic>{...d.data(), 'id': d.id}).toList();
+  }
+
   static Future<void> signOut() => auth.signOut();
 }
