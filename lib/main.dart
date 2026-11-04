@@ -937,6 +937,30 @@ class _TuitionHomeState extends State<TuitionHome> {
         ]), actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close'))])));
   }
 
+  Future<void> refreshDashboardFromLocal() async {
+    try {
+      final prefs = await SharedPreferences.getInstance()
+          .timeout(const Duration(seconds: 5));
+      final raw = prefs.getString(storeKey);
+      if (raw == null || raw.isEmpty) return;
+      final data = jsonDecode(raw) as Map<String, dynamic>;
+      final localStudents = mapList(data['students']);
+      final localAttendance = mapList(data['attendance']);
+      final localPayments = mapList(data['payments']);
+      final localMarks = mapList(data['marks']);
+      if (!mounted) return;
+      setState(() {
+        academy = data['academy']?.toString() ?? academy;
+        students = localStudents;
+        attendance = localAttendance;
+        payments = localPayments;
+        marks = localMarks;
+      });
+    } catch (e) {
+      if (mounted) notice('Dashboard refresh failed: $e');
+    }
+  }
+
   Future<void> feeReminder(Map<String, dynamic> s) async {
     final month = today.substring(0, 7);
     final paid = payments.where((p) => p['studentId'] == s['id'] && (p['date']?.toString() ?? '').startsWith(month))
@@ -971,7 +995,10 @@ class _TuitionHomeState extends State<TuitionHome> {
       floatingActionButton: tab == 1 ? FloatingActionButton.extended(onPressed: () => studentForm(), icon: const Icon(Icons.person_add), label: const Text('Add student'))
         : tab == 3 ? FloatingActionButton.extended(onPressed: addPayment, icon: const Icon(Icons.add), label: const Text('Add fee'))
         : tab == 4 ? FloatingActionButton.extended(onPressed: addMarks, icon: const Icon(Icons.add), label: const Text('Add marks')) : null,
-      bottomNavigationBar: NavigationBar(selectedIndex: tab, onDestinationSelected: (v) => setState(() => tab = v),
+      bottomNavigationBar: NavigationBar(selectedIndex: tab, onDestinationSelected: (v) async {
+        if (v == 0) await refreshDashboardFromLocal();
+        if (mounted) setState(() => tab = v);
+      },
         destinations: const [
           NavigationDestination(icon: Icon(Icons.home_outlined), label: 'Home'),
           NavigationDestination(icon: Icon(Icons.groups_outlined), label: 'Students'),
