@@ -201,6 +201,67 @@ class FirebaseService {
   }
 
 
+  /// Create one point-in-time cloud snapshot at most once every 24 hours.
+  /// Records are stored as separate documents to avoid Firestore's 1 MiB limit.
+  static Future<bool> createAutomaticBackup({
+    required String academy,
+    required List<Map<String, dynamic>> students,
+    required List<Map<String, dynamic>> attendance,
+    required List<Map<String, dynamic>> payments,
+    required List<Map<String, dynamic>> marks,
+  }) async {
+    final user = currentUser;
+    if (user == null) return false;
+    final userRef = db.collection('users').doc(user.uid);
+    final profile = await userRef.get();
+    final last = profile.data()?['lastAutoBackupAt'];
+    if (last is Timestamp &&
+        DateTime.now().toUtc().difference(last.toDate().toUtc()) <
+            const Duration(hours: 24)) {
+      return false;
+    }
+
+    final backupId = DateTime.now().toUtc().toIso8601String()
+        .replaceAll(':', '-').replaceAll('.', '-');
+    final backupRef = userRef.collection('backups').doc(backupId);
+    final collections = <String, List<Map<String, dynamic>>>{
+      'students': students,
+      'attendance': attendance,
+      'payments': payments,
+      'marks': marks,
+    };
+    for (final entry in collections.entries) {
+      for (var offset = 0; offset < entry.value.length; offset += 400) {
+        final batch = db.batch();
+        final end = (offset + 400 < entry.value.length)
+            ? offset + 400
+            : entry.value.length;
+        for (final row in entry.value.sublist(offset, end)) {
+          final id = row['id']?.toString();
+          if (id == null || id.isEmpty) continue;
+          batch.set(backupRef.collection(entry.key).doc(id), {
+            ...row,
+            'backupOwnerUid': user.uid,
+          });
+        }
+        await batch.commit();
+      }
+    }
+    await backupRef.set({
+      'ownerUid': user.uid,
+      'academy': academy,
+      'createdAt': FieldValue.serverTimestamp(),
+      'studentCount': students.length,
+      'attendanceCount': attendance.length,
+      'paymentCount': payments.length,
+      'marksCount': marks.length,
+    });
+    await userRef.set({
+      'lastAutoBackupAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+    return true;
+  }
+
   /// Store a compact teacher profile photo in the teacher's own profile doc.
   /// Keep the encoded image below Firestore's 1 MiB document limit.
   static Future<void> saveTeacherPhoto(String photoBase64) async {
