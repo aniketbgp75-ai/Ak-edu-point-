@@ -9,10 +9,12 @@ import 'firebase_options.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:share_plus/share_plus.dart';
 import 'services/firebase_service.dart';
+import 'services/notification_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await AppNotifications.initialize();
   runApp(const AkEduPointApp());
 }
 
@@ -368,6 +370,9 @@ class _TuitionHomeState extends State<TuitionHome> {
     final p = await SharedPreferences.getInstance();
     final raw = p.getString(storeKey);
     profilePhotoBase64 = p.getString('ak_teacher_profile_photo');
+    await AppNotifications.setFeeReminder(p.getBool('ak_fee_alerts') ?? true);
+    await AppNotifications.setAttendanceReminder(p.getBool('ak_attendance_alerts') ?? true);
+    await AppNotifications.setWeeklySummary(p.getBool('ak_weekly_summary') ?? false);
     if (profilePhotoBase64 == null) {
       try {
         profilePhotoBase64 = await FirebaseService.getTeacherPhoto();
@@ -673,10 +678,10 @@ class _TuitionHomeState extends State<TuitionHome> {
     await showDialog<void>(context: context, builder: (ctx) => StatefulBuilder(builder: (ctx, refresh) =>
       AlertDialog(title: const Text('Settings & Notification Preferences'),
         content: Column(mainAxisSize: MainAxisSize.min, children: [
-          SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Fee reminder preferences'), value: feeAlerts, onChanged: (v) async { refresh(() => feeAlerts = v); await prefs.setBool('ak_fee_alerts', v); }),
-          SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Attendance reminder preferences'), value: attendanceAlerts, onChanged: (v) async { refresh(() => attendanceAlerts = v); await prefs.setBool('ak_attendance_alerts', v); }),
-          SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Weekly summary preference'), value: weeklySummary, onChanged: (v) async { refresh(() => weeklySummary = v); await prefs.setBool('ak_weekly_summary', v); }),
-          const Text('These are saved preferences. Push notifications and scheduled alerts need notification service setup.', style: TextStyle(fontSize: 12, color: Colors.black54)),
+          SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Fee reminder preferences'), value: feeAlerts, onChanged: (v) async { refresh(() => feeAlerts = v); await prefs.setBool('ak_fee_alerts', v); await AppNotifications.setFeeReminder(v); }),
+          SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Attendance reminder preferences'), value: attendanceAlerts, onChanged: (v) async { refresh(() => attendanceAlerts = v); await prefs.setBool('ak_attendance_alerts', v); await AppNotifications.setAttendanceReminder(v); }),
+          SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Weekly summary preference'), value: weeklySummary, onChanged: (v) async { refresh(() => weeklySummary = v); await prefs.setBool('ak_weekly_summary', v); await AppNotifications.setWeeklySummary(v); }),
+          const Text('Scheduled reminders are delivered on this device. Allow notifications in Android settings.', style: TextStyle(fontSize: 12, color: Colors.black54)),
         ]), actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close'))])));
   }
 
