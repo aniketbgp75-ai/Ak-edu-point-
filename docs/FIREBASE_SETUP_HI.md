@@ -24,7 +24,7 @@ Firebase CLI से project चुनने के बाद:
 ```bash
 firebase deploy --only firestore:rules
 ```
-Repository का `firestore.rules` शुरुआती role-based rules देता है। Teacher account Firebase Console से owner द्वारा बनाया जाना चाहिए और उसके `users/{uid}` profile में `role: "teacher"` set करना होगा। App self-registration केवल parent/student role के लिए रखता है।
+Repository का `firestore.rules` शुरुआती rules देता है। Teacher authorization trusted custom claim `teacher: true` पर आधारित है। Teacher account owner द्वारा Firebase Authentication में बनाया जाना चाहिए। Teacher अधिकार केवल trusted Firebase Admin SDK से custom claim `teacher: true` सेट करने पर मिलेंगे; केवल Firestore profile में role लिखना पर्याप्त नहीं है। Admin SDK की private service-account key कभी GitHub या app में upload न करें। App self-registration केवल parent/student role के लिए रखता है।
 
 ## 4. Run
 ```bash
