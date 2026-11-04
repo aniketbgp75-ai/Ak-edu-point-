@@ -5,12 +5,10 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function myProfile() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
-    }
-
+    // Set this custom claim only from a trusted Admin SDK environment.
+    // Never let a client choose its own teacher role.
     function isTeacher() {
-      return signedIn() && myProfile().role == 'teacher';
+      return signedIn() && request.auth.token.teacher == true;
     }
 
     function isLinkedFamily(studentId) {
@@ -21,8 +19,6 @@ service cloud.firestore {
 
     match /users/{uid} {
       allow read: if signedIn() && (request.auth.uid == uid || isTeacher());
-      // Public sign-up is restricted to parent/student. Teacher accounts must be provisioned
-      // by the owner in Firebase Console, never by a client request.
       allow create: if signedIn()
         && request.auth.uid == uid
         && request.resource.data.role in ['parent', 'student']
