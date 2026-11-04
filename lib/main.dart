@@ -49,12 +49,75 @@ class AuthGate extends StatelessWidget {
             }
             final isTeacher = claimSnapshot.data?.claims?['teacher'] == true;
             if (isTeacher) return const TuitionHome();
-            return AccessPendingPage(email: user.email ?? '');
+            return FutureBuilder(
+              future: FirebaseService.getMyProfile(),
+              builder: (context, profileSnapshot) {
+                if (profileSnapshot.connectionState == ConnectionState.waiting) {
+                  return const Scaffold(body: Center(child: CircularProgressIndicator()));
+                }
+                final role = profileSnapshot.data?.data()?['role']?.toString();
+                if (role == 'parent' || role == 'student') return const FamilyDashboard();
+                return AccessPendingPage(email: user.email ?? '');
+              },
+            );
           },
         );
       },
     );
   }
+}
+
+class FamilyDashboard extends StatefulWidget {
+  const FamilyDashboard({super.key});
+  @override
+  State<FamilyDashboard> createState() => _FamilyDashboardState();
+}
+
+class _FamilyDashboardState extends State<FamilyDashboard> {
+  late Future<List<Map<String, dynamic>>> studentsFuture;
+  @override
+  void initState() { super.initState(); studentsFuture = FirebaseService.getFamilyStudents(); }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Family Dashboard'), actions: [
+      IconButton(onPressed: () async { await FirebaseService.signOut(); }, icon: const Icon(Icons.logout)),
+    ]),
+    body: FutureBuilder<List<Map<String, dynamic>>>(
+      future: studentsFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+        if (snapshot.hasError) return const Center(child: Text('Records load nahi ho paye. Internet connection check karein.'));
+        final rows = snapshot.data ?? [];
+        if (rows.isEmpty) return const Center(child: Padding(padding: EdgeInsets.all(24), child: Text('Abhi koi student account link nahi hai. Tuition teacher se student account link karwayein.', textAlign: TextAlign.center)));
+        return ListView(padding: const EdgeInsets.all(16), children: [
+          const Text('Linked Student Records', style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold)),
+          ...rows.map((student) => Card(child: ExpansionTile(
+            leading: CircleAvatar(child: Text((student['name'] ?? 'S').toString().substring(0, 1).toUpperCase())),
+            title: Text(student['name']?.toString() ?? 'Student'),
+            subtitle: Text('Class ${student['class'] ?? '—'} • ${student['batch'] ?? 'General'}'),
+            children: [
+              ListTile(title: const Text('Monthly Fee'), trailing: Text('₹${student['fee'] ?? 0}')),
+              FutureBuilder<List<Map<String, dynamic>>>(future: FirebaseService.getFamilyRecords('payments', student['id'].toString()), builder: (context, snap) {
+                final items = snap.data ?? [];
+                final total = items.fold<int>(0, (sum, item) => sum + (int.tryParse(item['amount'].toString()) ?? 0));
+                return ListTile(leading: const Icon(Icons.payments_outlined), title: const Text('Payment History'), subtitle: Text('${items.length} payments • Total ₹$total'));
+              }),
+              FutureBuilder<List<Map<String, dynamic>>>(future: FirebaseService.getFamilyRecords('attendance', student['id'].toString()), builder: (context, snap) {
+                final items = snap.data ?? [];
+                final present = items.where((x) => x['status'] == 'Present').length;
+                return ListTile(leading: const Icon(Icons.fact_check_outlined), title: const Text('Attendance'), subtitle: Text('Present $present / ${items.length} marked'));
+              }),
+              FutureBuilder<List<Map<String, dynamic>>>(future: FirebaseService.getFamilyRecords('marks', student['id'].toString()), builder: (context, snap) {
+                final items = snap.data ?? [];
+                return ListTile(leading: const Icon(Icons.assessment_outlined), title: const Text('Exam Results'), subtitle: Text('${items.length} result records'));
+              }),
+            ],
+          ))),
+        ]);
+      },
+    ),
+  );
 }
 
 class LoginPage extends StatefulWidget {
@@ -363,6 +426,7 @@ class _TuitionHomeState extends State<TuitionHome> {
     final cls = TextEditingController(text: old?['class']?.toString() ?? '');
     final phone = TextEditingController(text: old?['phone']?.toString() ?? '');
     final guardian = TextEditingController(text: old?['guardian']?.toString() ?? '');
+    final parentEmail = TextEditingController(text: old?['parentEmail']?.toString() ?? '');
     final fee = TextEditingController(text: old?['fee']?.toString() ?? '');
     final batch = TextEditingController(text: old?['batch']?.toString() ?? 'General');
     final key = GlobalKey<FormState>();
@@ -371,18 +435,22 @@ class _TuitionHomeState extends State<TuitionHome> {
       content: Form(key: key, child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
         input(name, 'Student name', required: true), input(cls, 'Class', required: true),
         input(phone, 'Mobile number', type: TextInputType.phone), input(guardian, 'Parent / guardian'),
-        input(batch, 'Batch / Program'), input(fee, 'Monthly fee ₹', type: TextInputType.number)]))),
+        input(parentEmail, 'Parent account email (optional)'), input(batch, 'Batch / Program'), input(fee, 'Monthly fee ₹', type: TextInputType.number)]))),
       actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
         FilledButton(onPressed: () { if (key.currentState!.validate()) Navigator.pop(ctx, true); }, child: const Text('Save'))]));
     if (ok == true) {
       final id = old?['id']?.toString() ?? DateTime.now().microsecondsSinceEpoch.toString();
+      String? parentUid;
+      try { parentUid = await FirebaseService.findFamilyUidByEmail(parentEmail.text); } catch (_) {}
       final row = <String, dynamic>{'id': id, 'name': name.text.trim(), 'class': cls.text.trim(),
-        'phone': phone.text.trim(), 'guardian': guardian.text.trim(), 'batch': batch.text.trim().isEmpty ? 'General' : batch.text.trim(), 'fee': n(fee.text)};
+        'phone': phone.text.trim(), 'guardian': guardian.text.trim(), 'parentEmail': parentEmail.text.trim().toLowerCase(),
+        if (parentUid != null) 'parentUid': parentUid,
+        'batch': batch.text.trim().isEmpty ? 'General' : batch.text.trim(), 'fee': n(fee.text)};
       final i = students.indexWhere((s) => s['id'] == id);
       if (i < 0) { students.add(row); } else { students[i] = row; }
       await save();
     }
-    name.dispose(); cls.dispose(); phone.dispose(); guardian.dispose(); fee.dispose(); batch.dispose();
+    name.dispose(); cls.dispose(); phone.dispose(); guardian.dispose(); parentEmail.dispose(); fee.dispose(); batch.dispose();
   }
 
   Future<void> deleteStudent(Map<String, dynamic> s) async {
