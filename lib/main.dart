@@ -4,6 +4,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:share_plus/share_plus.dart';
+import 'services/firebase_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -18,7 +19,203 @@ class AkEduPointApp extends StatelessWidget {
     title: 'AK Edu Point', debugShowCheckedModeBanner: false,
     theme: ThemeData(colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF2457C5)), useMaterial3: true,
       scaffoldBackgroundColor: const Color(0xFFF5F7FB)),
-    home: const TuitionHome());
+    home: const AuthGate());
+}
+
+
+/// Routes authenticated users according to a trusted Firebase custom claim.
+class AuthGate extends StatelessWidget {
+  const AuthGate({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder(
+      stream: FirebaseService.auth.authStateChanges(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+        }
+        final user = snapshot.data;
+        if (user == null) return const LoginPage();
+        return FutureBuilder(
+          future: user.getIdTokenResult(true),
+          builder: (context, claimSnapshot) {
+            if (claimSnapshot.connectionState == ConnectionState.waiting) {
+              return const Scaffold(body: Center(child: CircularProgressIndicator()));
+            }
+            final isTeacher = claimSnapshot.data?.claims?['teacher'] == true;
+            if (isTeacher) return const TuitionHome();
+            return AccessPendingPage(email: user.email ?? '');
+          },
+        );
+      },
+    );
+  }
+}
+
+class LoginPage extends StatefulWidget {
+  const LoginPage({super.key});
+  @override
+  State<LoginPage> createState() => _LoginPageState();
+}
+
+class _LoginPageState extends State<LoginPage> {
+  final email = TextEditingController();
+  final password = TextEditingController();
+  bool busy = false;
+  bool hidePassword = true;
+  String? error;
+
+  @override
+  void dispose() {
+    email.dispose();
+    password.dispose();
+    super.dispose();
+  }
+
+  Future<void> signIn() async {
+    if (email.text.trim().isEmpty || password.text.isEmpty) {
+      setState(() => error = 'Email aur password dono bhariye.');
+      return;
+    }
+    setState(() { busy = true; error = null; });
+    try {
+      await FirebaseService.signIn(email: email.text, password: password.text);
+      // AuthGate checks the trusted teacher custom claim before opening records.
+    } on FirebaseAuthException catch (e) {
+      setState(() => error = e.code == 'user-not-found' || e.code == 'wrong-password' || e.code == 'invalid-credential'
+        ? 'Email ya password sahi nahi hai.' : (e.message ?? 'Login nahi ho paya.'));
+    } catch (_) {
+      setState(() => error = 'Login nahi ho paya. Internet connection check karein.');
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  Future<void> resetPassword() async {
+    if (email.text.trim().isEmpty) {
+      setState(() => error = 'Pehle email address likhiye.');
+      return;
+    }
+    try {
+      await FirebaseService.auth.sendPasswordResetEmail(email: email.text.trim());
+      if (mounted) setState(() => error = 'Password reset link email par bhej diya gaya hai.');
+    } on FirebaseAuthException catch (e) {
+      if (mounted) setState(() => error = e.message ?? 'Reset email nahi bheja ja saka.');
+    }
+  }
+
+  Future<void> registerFamily() async {
+    final name = TextEditingController();
+    final mail = TextEditingController(text: email.text.trim());
+    final pass = TextEditingController();
+    String role = 'parent';
+    final formKey = GlobalKey<FormState>();
+    final accepted = await showDialog<bool>(context: context, builder: (ctx) =>
+      StatefulBuilder(builder: (ctx, refresh) => AlertDialog(
+        title: const Text('Parent / Student registration'),
+        content: Form(key: formKey, child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextFormField(controller: name, decoration: const InputDecoration(labelText: 'Full name'),
+            validator: (v) => v == null || v.trim().isEmpty ? 'Name required' : null),
+          TextFormField(controller: mail, keyboardType: TextInputType.emailAddress,
+            decoration: const InputDecoration(labelText: 'Email address'),
+            validator: (v) => v == null || !v.contains('@') ? 'Valid email required' : null),
+          TextFormField(controller: pass, obscureText: true,
+            decoration: const InputDecoration(labelText: 'Password (minimum 6 characters)'),
+            validator: (v) => v == null || v.length < 6 ? 'At least 6 characters' : null),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(value: role, decoration: const InputDecoration(labelText: 'Account type'),
+            items: const [DropdownMenuItem(value: 'parent', child: Text('Parent')),
+              DropdownMenuItem(value: 'student', child: Text('Student'))],
+            onChanged: (v) { if (v != null) refresh(() => role = v); }),
+        ])),
+        actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () { if (formKey.currentState!.validate()) Navigator.pop(ctx, true); },
+            child: const Text('Create account'))],
+      )));
+    if (accepted == true) {
+      setState(() { busy = true; error = null; });
+      try {
+        await FirebaseService.registerFamilyAccount(name: name.text, email: mail.text,
+          password: pass.text, role: role);
+        // Family accounts are created securely, but family portal screens are a later milestone.
+      } on FirebaseAuthException catch (e) {
+        setState(() => error = e.code == 'email-already-in-use' ? 'Is email se account pehle se bana hai.' : (e.message ?? 'Account nahi bana.'));
+      } catch (_) {
+        setState(() => error = 'Account nahi ban saka. Firestore rules aur internet check karein.');
+      } finally {
+        if (mounted) setState(() => busy = false);
+      }
+    }
+    name.dispose(); mail.dispose(); pass.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    body: SafeArea(child: Center(child: SingleChildScrollView(padding: const EdgeInsets.all(24),
+      child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 420), child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          const Icon(Icons.school_rounded, size: 64, color: Color(0xFF2457C5)),
+          const SizedBox(height: 12),
+          const Text('AK Edu Point', textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 6),
+          const Text('Teacher login', textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.black54, fontSize: 16)),
+          const SizedBox(height: 28),
+          TextField(controller: email, keyboardType: TextInputType.emailAddress,
+            decoration: const InputDecoration(labelText: 'Email address', prefixIcon: Icon(Icons.email_outlined),
+              border: OutlineInputBorder())),
+          const SizedBox(height: 14),
+          TextField(controller: password, obscureText: hidePassword,
+            decoration: InputDecoration(labelText: 'Password', prefixIcon: const Icon(Icons.lock_outline),
+              border: const OutlineInputBorder(), suffixIcon: IconButton(
+                onPressed: () => setState(() => hidePassword = !hidePassword),
+                icon: Icon(hidePassword ? Icons.visibility : Icons.visibility_off)))),
+          Align(alignment: Alignment.centerRight, child: TextButton(
+            onPressed: busy ? null : resetPassword, child: const Text('Forgot password?'))),
+          if (error != null) Padding(padding: const EdgeInsets.only(bottom: 12),
+            child: Text(error!, style: TextStyle(color: error!.contains('bhej diya') ? Colors.green : Colors.red))),
+          FilledButton(onPressed: busy ? null : signIn,
+            child: Padding(padding: const EdgeInsets.all(12),
+              child: busy ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Text('Login', style: TextStyle(fontSize: 16)))),
+          const SizedBox(height: 12),
+          OutlinedButton(onPressed: busy ? null : registerFamily,
+            child: const Text('Parent / Student registration')),
+          const SizedBox(height: 18),
+          const Text('Teacher account owner dwara Firebase mein banaya aur approve kiya jana chahiye.',
+            textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: Colors.black54)),
+        ],
+      )),
+    )),
+  );
+}
+
+class AccessPendingPage extends StatelessWidget {
+  final String email;
+  const AccessPendingPage({super.key, required this.email});
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('AK Edu Point')),
+    body: Center(child: Padding(padding: const EdgeInsets.all(24), child: Column(
+      mainAxisSize: MainAxisSize.min, children: [
+        const Icon(Icons.admin_panel_settings_outlined, size: 56, color: Colors.orange),
+        const SizedBox(height: 16),
+        const Text('Teacher approval pending', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+          textAlign: TextAlign.center),
+        const SizedBox(height: 10),
+        Text('Signed in as $email, lekin is account ko abhi teacher access nahi mila hai.',
+          textAlign: TextAlign.center),
+        const SizedBox(height: 10),
+        const Text('Owner ko Firebase Admin SDK se teacher permission deni hogi. Sirf app mein role chunne se teacher access nahi milta.',
+          textAlign: TextAlign.center, style: TextStyle(color: Colors.black54)),
+        const SizedBox(height: 20),
+        FilledButton(onPressed: () => FirebaseService.signOut(), child: const Text('Sign out')),
+      ],
+    ))),
+  );
 }
 
 class TuitionHome extends StatefulWidget {
