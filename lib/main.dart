@@ -110,45 +110,76 @@ class _LoginPageState extends State<LoginPage> {
     final name = TextEditingController();
     final mail = TextEditingController(text: email.text.trim());
     final pass = TextEditingController();
-    String role = 'parent';
     final formKey = GlobalKey<FormState>();
-    final accepted = await showDialog<bool>(context: context, builder: (ctx) =>
-      StatefulBuilder(builder: (ctx, refresh) => AlertDialog(
-        title: const Text('Parent / Student registration'),
-        content: Form(key: formKey, child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
-          TextFormField(controller: name, decoration: const InputDecoration(labelText: 'Full name'),
-            validator: (v) => v == null || v.trim().isEmpty ? 'Name required' : null),
-          TextFormField(controller: mail, keyboardType: TextInputType.emailAddress,
-            decoration: const InputDecoration(labelText: 'Email address'),
-            validator: (v) => v == null || !v.contains('@') ? 'Valid email required' : null),
-          TextFormField(controller: pass, obscureText: true,
-            decoration: const InputDecoration(labelText: 'Password (minimum 6 characters)'),
-            validator: (v) => v == null || v.length < 6 ? 'At least 6 characters' : null),
-          const SizedBox(height: 12),
-          DropdownButtonFormField<String>(value: role, decoration: const InputDecoration(labelText: 'Account type'),
-            items: const [DropdownMenuItem(value: 'parent', child: Text('Parent')),
-              DropdownMenuItem(value: 'student', child: Text('Student'))],
-            onChanged: (v) { if (v != null) refresh(() => role = v); }),
-        ])),
-        actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () { if (formKey.currentState!.validate()) Navigator.pop(ctx, true); },
-            child: const Text('Create account'))],
-      )));
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Parent registration'),
+          content: Form(
+            key: formKey,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextFormField(
+                    controller: name,
+                    decoration: const InputDecoration(labelText: 'Full name'),
+                    validator: (v) => v == null || v.trim().isEmpty ? 'Name required' : null,
+                  ),
+                  TextFormField(
+                    controller: mail,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: const InputDecoration(labelText: 'Email address'),
+                    validator: (v) => v == null || !v.contains('@') ? 'Valid email required' : null,
+                  ),
+                  TextFormField(
+                    controller: pass,
+                    obscureText: true,
+                    decoration: const InputDecoration(labelText: 'Password (minimum 6 characters)'),
+                    validator: (v) => v == null || v.length < 6 ? 'At least 6 characters' : null,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (formKey.currentState!.validate()) Navigator.pop(ctx, true);
+              },
+              child: const Text('Create account'),
+            ),
+          ],
+        );
+      },
+    );
     if (accepted == true) {
       setState(() { busy = true; error = null; });
       try {
-        await FirebaseService.registerFamilyAccount(name: name.text, email: mail.text,
-          password: pass.text, role: role);
-        // Family accounts are created securely, but family portal screens are a later milestone.
+        await FirebaseService.registerFamilyAccount(
+          name: name.text,
+          email: mail.text,
+          password: pass.text,
+          role: 'parent',
+        );
       } on FirebaseAuthException catch (e) {
-        setState(() => error = e.code == 'email-already-in-use' ? 'Is email se account pehle se bana hai.' : (e.message ?? 'Account nahi bana.'));
+        setState(() => error = e.code == 'email-already-in-use'
+            ? 'Is email se account pehle se bana hai.'
+            : (e.message ?? 'Account nahi bana.'));
       } catch (_) {
         setState(() => error = 'Account nahi ban saka. Firestore rules aur internet check karein.');
       } finally {
         if (mounted) setState(() => busy = false);
       }
     }
-    name.dispose(); mail.dispose(); pass.dispose();
+    name.dispose();
+    mail.dispose();
+    pass.dispose();
   }
 
   @override
