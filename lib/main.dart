@@ -368,6 +368,14 @@ class _TuitionHomeState extends State<TuitionHome> {
     final p = await SharedPreferences.getInstance();
     final raw = p.getString(storeKey);
     profilePhotoBase64 = p.getString('ak_teacher_profile_photo');
+    if (profilePhotoBase64 == null) {
+      try {
+        profilePhotoBase64 = await FirebaseService.getTeacherPhoto();
+        if (profilePhotoBase64 != null) {
+          await p.setString('ak_teacher_profile_photo', profilePhotoBase64!);
+        }
+      } catch (_) { /* Use the local photo when cloud access is unavailable. */ }
+    }
     if (raw != null) {
       try {
         final d = jsonDecode(raw) as Map<String, dynamic>;
@@ -454,10 +462,15 @@ class _TuitionHomeState extends State<TuitionHome> {
       if (picked == null || picked.files.isEmpty) return;
       final bytes = picked.files.single.bytes;
       if (bytes == null || bytes.isEmpty) { notice('Photo read nahi ho payi.'); return; }
-      if (bytes.length > 3 * 1024 * 1024) { notice('Photo 3 MB se chhoti select karein.'); return; }
-      profilePhotoBase64 = base64Encode(bytes);
+      if (bytes.length > 480 * 1024) {
+        notice('Cloud sync ke liye 480 KB se chhoti photo select karein.');
+        return;
+      }
+      final encoded = base64Encode(bytes);
+      await FirebaseService.saveTeacherPhoto(encoded);
+      profilePhotoBase64 = encoded;
       await save();
-      if (mounted) notice('Profile photo update ho gayi. Ye photo is device par save hai.');
+      if (mounted) notice('Profile photo device aur cloud dono par save ho gayi.');
     } catch (_) { notice('Profile photo select nahi ho payi.'); }
   }
 
