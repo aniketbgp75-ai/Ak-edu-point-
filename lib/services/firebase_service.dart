@@ -173,5 +173,32 @@ class FirebaseService {
     return snap.docs.map((d) => <String, dynamic>{...d.data(), 'id': d.id}).toList();
   }
 
+
+  /// Delete a student and all of that student's teacher-owned records.
+  /// Called only after the teacher confirms deletion in the app.
+  static Future<void> deleteStudentRecords(String studentId) async {
+    final user = currentUser;
+    if (user == null) throw StateError('Please sign in first.');
+    final studentRef = db.collection('students').doc(studentId);
+    final student = await studentRef.get();
+    if (student.exists && student.data()?['ownerUid'] == user.uid) {
+      await studentRef.delete();
+    }
+    for (final name in ['attendance', 'payments', 'marks']) {
+      final snap = await db.collection(name)
+          .where('ownerUid', isEqualTo: user.uid)
+          .where('studentId', isEqualTo: studentId)
+          .get();
+      for (var offset = 0; offset < snap.docs.length; offset += 400) {
+        final batch = db.batch();
+        final end = (offset + 400 < snap.docs.length) ? offset + 400 : snap.docs.length;
+        for (final doc in snap.docs.sublist(offset, end)) {
+          batch.delete(doc.reference);
+        }
+        await batch.commit();
+      }
+    }
+  }
+
   static Future<void> signOut() => auth.signOut();
 }
