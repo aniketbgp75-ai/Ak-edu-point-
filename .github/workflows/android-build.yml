@@ -54,6 +54,12 @@ jobs:
           a, app_count = re.subn(r'applicationId\s*=\s*"[^"]+"', f'applicationId = "{package_name}"', a, count=1)
           if ns_count != 1 or app_count != 1:
               raise SystemExit("Could not set Android namespace/applicationId to Firebase package")
+
+          # flutter_local_notifications requires Java core library desugaring.
+          if "isCoreLibraryDesugaringEnabled" not in a:
+              a = a.replace("compileOptions {", "compileOptions {\n        isCoreLibraryDesugaringEnabled = true", 1)
+          if "coreLibraryDesugaring(" not in a:
+              a = a.replace("dependencies {", "dependencies {\n    coreLibraryDesugaring(\"com.android.tools:desugar_jdk_libs:2.1.4\")", 1)
           app.write_text(a)
 
           # Keep the generated launcher Activity in the same Java/Kotlin package.
