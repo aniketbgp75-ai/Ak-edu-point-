@@ -569,7 +569,10 @@ class _TuitionHomeState extends State<TuitionHome> {
       reportLine('Outstanding fees', rupees(due)),
       reportLine('Exam records', marks.length.toString()),
       reportLine('Combined marks percentage', pct.toStringAsFixed(1) + '%'),
-      OutlinedButton.icon(onPressed: backupData, icon: const Icon(Icons.backup_outlined), label: const Text('Backup data (save/share file)')),\n      const SizedBox(height: 8),\n      OutlinedButton.icon(onPressed: restoreData, icon: const Icon(Icons.restore), label: const Text('Restore from backup file')),\n      const SizedBox(height: 8),\n      FilledButton.icon(onPressed: () {
+      OutlinedButton.icon(onPressed: backupData, icon: const Icon(Icons.backup_outlined), label: const Text('Backup data (save/share file)')),
+      const SizedBox(height: 8),
+      OutlinedButton.icon(onPressed: restoreData, icon: const Icon(Icons.restore), label: const Text('Restore from backup file')),
+      const SizedBox(height: 8),\n      FilledButton.icon(onPressed: () {
         final b = StringBuffer(academy + ' report\nDate: ' + today + '\n');
         b.writeln('Students: ' + students.length.toString());
         b.writeln('Present: ' + present.toString() + ' | Absent: ' + absent.toString());
