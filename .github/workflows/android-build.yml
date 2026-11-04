@@ -34,13 +34,13 @@ jobs:
           if marker not in s:
               raise SystemExit("Could not find plugin block in settings.gradle.kts")
           if 'com.google.gms.google-services' not in s:
-              s = s.replace(marker, marker + '\\n    id("com.google.gms.google-services") version "4.4.2" apply false', 1)
+              s = s.replace(marker, marker + '\n    id("com.google.gms.google-services") version "4.4.2" apply false', 1)
           settings.write_text(s)
           a = app.read_text()
           if marker not in a:
               raise SystemExit("Could not find plugin block in app/build.gradle.kts")
           if 'com.google.gms.google-services' not in a:
-              a = a.replace(marker, marker + '\\n    id("com.google.gms.google-services")', 1)
+              a = a.replace(marker, marker + '\n    id("com.google.gms.google-services")', 1)
           app.write_text(a)
           PY
           mkdir -p android/app
