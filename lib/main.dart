@@ -490,8 +490,10 @@ class _TuitionHomeState extends State<TuitionHome> {
       await FirebaseService.createAutomaticBackup(academy: academy,
         students: students, attendance: attendance, payments: payments, marks: marks)
           .timeout(const Duration(seconds: 12));
-    } catch (_) {
-      if (mounted) notice('Phone par save ho gaya. Cloud sync pending hai; internet/Firebase rules check karein.');
+    } catch (e) {
+      // Surface the exact Firebase error so permission, network, and config
+      // failures can be diagnosed instead of showing a misleading generic toast.
+      if (mounted) notice('Phone par save ho gaya. Cloud sync failed: $e');
     }
   }
 
